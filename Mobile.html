@@ -59,6 +59,13 @@
                     params: {
                         placementId: "9350115"
                     }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266211",
+                        network: "10122.1",
+                        alias: "4266211"
+                    }
             }]
     });
     adUnits.push({
@@ -75,6 +82,13 @@
                     bidder: "brealtime",
                     params: {
                         placementId: "9350111"
+                    }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266210",
+                        network: "10122.1",
+                        alias: "4266210"
                     }
             }]
     });
@@ -93,6 +107,13 @@
                     params: {
                         placementId: "9350112"
                     }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266209",
+                        network: "10122.1",
+                        alias: "4266209"
+                    }
             }]
     });
     adUnits.push({
@@ -109,6 +130,13 @@
                     bidder: "brealtime",
                     params: {
                         placementId: "9350113"
+                    }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266212",
+                        network: "10122.1",
+                        alias: "4266212"
                     }
             }]
     });
@@ -150,6 +178,11 @@
                 }]
             },
             brealtime: {
+                bidCpmAdjustment: function(bidCpm) {
+                    return bidCpm * .80;
+                }
+            },
+            aol: {
                 bidCpmAdjustment: function(bidCpm) {
                     return bidCpm * .80;
                 }

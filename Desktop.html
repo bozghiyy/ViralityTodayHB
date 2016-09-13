@@ -60,7 +60,14 @@
                     params: {
                         placementId: "9350094"
                     }
-            }]
+            } /* NO 728x90 for AOL , {
+                    bidder: "aol",
+                    params: {
+                        placement: "",
+                        network: "10122.1",
+                        alias: ""
+                    }
+            } */]
     });
     adUnits.push({
         code: "div-gpt-ad-PC_ATF_300_250",
@@ -76,6 +83,13 @@
                     bidder: "brealtime",
                     params: {
                         placementId: "9350108"
+                    }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266204",
+                        network: "10122.1",
+                        alias: "4266204"
                     }
             }]
     });
@@ -94,6 +108,13 @@
                     params: {
                         placementId: "9350109"
                     }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266205",
+                        network: "10122.1",
+                        alias: "4266205"
+                    }
             }]
     });
     adUnits.push({
@@ -111,6 +132,13 @@
                     params: {
                         placementId: "9350110"
                     }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266202",
+                        network: "10122.1",
+                        alias: "4266202"
+                    }
             }]
     });
     adUnits.push({
@@ -127,6 +155,13 @@
                     bidder: "brealtime",
                     params: {
                         placementId: "9350110" // Duplicate of PC_BTF_300_250
+                    }
+            }, {
+                    bidder: "aol",
+                    params: {
+                        placement: "4266203",
+                        network: "10122.1",
+                        alias: "4266203"
                     }
             }]
     });
@@ -168,6 +203,11 @@
                 }]
             },
             brealtime: {
+                bidCpmAdjustment: function(bidCpm) {
+                    return bidCpm * .80;
+                }
+            },
+            aol: {
                 bidCpmAdjustment: function(bidCpm) {
                     return bidCpm * .80;
                 }

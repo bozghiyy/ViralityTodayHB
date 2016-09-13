@@ -1,0 +1,10 @@
+[
+    "adequant",
+    "aol",
+    "appnexus",
+    {
+      "appnexus": {
+        "alias": "brealtime"
+      }
+    }
+]
