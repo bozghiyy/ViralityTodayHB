@@ -1,0 +1,200 @@
+<!-- OpenX Bidder here -->
+<script>
+    var PREBID_TIMEOUT = 2000; // Time to wait before GPT is loaded
+
+    var googletag = googletag || {};
+    googletag.cmd = googletag.cmd || [];
+    var adUnits = adUnits || [];
+
+    function initAdserver() {
+        if (pbjs.initAdserverSet) return;
+        // Load GPT
+        (function() {
+            var gads = document.createElement('script');
+            gads.async = true;
+            gads.type = 'text/javascript';
+            var useSSL = 'https:' == document.location.protocol;
+            gads.src = (useSSL ? 'https:' : 'http:') +
+                '//www.googletagservices.com/tag/js/gpt.js';
+            var node = document.getElementsByTagName('script')[0];
+            node.parentNode.insertBefore(gads, node);
+        })();
+        pbjs.initAdserverSet = true;
+    };
+    setTimeout(initAdserver, PREBID_TIMEOUT);
+
+    // Load Prebid
+    var pbjs = pbjs || {};
+    pbjs.que = pbjs.que || [];
+    (function() {
+        var pbjsEl = document.createElement("script");
+        pbjsEl.type = "text/javascript";
+        pbjsEl.async = true;
+        pbjsEl.src = "prebid.js"; // REPLACE WITH LOCATION OF prebid
+        var pbjsTargetEl = document.getElementsByTagName("head")[0];
+        pbjsTargetEl.insertBefore(pbjsEl, pbjsTargetEl.firstChild);
+    })();
+</script>
+<script>
+    googletag.cmd.push(function() {
+        googletag.defineSlot('/63656604/MOB_320_50', [320, 50], 'div-gpt-ad-MOB_320_50').addService(googletag.pubads());
+        googletag.defineSlot('/63656604/MOB_ATF_300_250', [300, 250], 'div-gpt-ad-MOB_ATF_300_250').addService(googletag.pubads());
+        googletag.defineSlot('/63656604/MOB_BTF_300_250', [300, 250], 'div-gpt-ad-MOB_BTF_300_250').addService(googletag.pubads());
+        googletag.defineSlot('/63656604/MOB_BTF_300_250_2', [300, 250], 'div-gpt-ad-MOB_BTF_300_250_2').addService(googletag.pubads());
+    });
+</script>
+<script>
+    adUnits.push({
+        code: "div-gpt-ad-MOB_320_50",
+        sizes: [
+            [320, 50]
+        ],
+        bids: [{    bidder: 'adequant',
+                    params: {
+                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+                            publisher_id: 5004421
+                    }
+                }, {
+                    bidder: "brealtime",
+                    params: {
+                        placementId: "9350115"
+                    }
+            }]
+    });
+    adUnits.push({
+        code: "div-gpt-ad-MOB_ATF_300_250",
+        sizes: [
+            [300, 250]
+        ],
+        bids: [{    bidder: 'adequant',
+                    params: {
+                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+                            publisher_id: 5004421
+                    }
+                }, {
+                    bidder: "brealtime",
+                    params: {
+                        placementId: "9350111"
+                    }
+            }]
+    });
+    adUnits.push({
+        code: "div-gpt-ad-MOB_BTF_300_250",
+        sizes: [
+            [300, 250]
+        ],
+        bids: [{    bidder: 'adequant',
+                    params: {
+                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+                            publisher_id: 5004421
+                    }
+                }, {
+                    bidder: "brealtime",
+                    params: {
+                        placementId: "9350112"
+                    }
+            }]
+    });
+    adUnits.push({
+        code: "div-gpt-ad-MOB_BTF_300_250_2",
+        sizes: [
+            [300, 250]
+        ],
+        bids: [{    bidder: 'adequant',
+                    params: {
+                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+                            publisher_id: 5004421
+                    }
+                }, {
+                    bidder: "brealtime",
+                    params: {
+                        placementId: "9350113"
+                    }
+            }]
+    });
+</script>
+<script>
+    pbjs.que.push(function() {
+
+        pbjs.addAdUnits(adUnits);
+
+       // Prebid Settings
+        pbjs.bidderSettings = {
+            standard: {
+                adserverTargeting: [{
+                    key: "hb_bidder",
+                    val: function(bidResponse) {
+                        return bidResponse.bidderCode;
+                    }
+                }, {
+                    key: "hb_adid",
+                    val: function(bidResponse) {
+                        return bidResponse.adId;
+                    }
+                }, {
+                    key: "hb_pb",
+                    val: function(bidResponse) {
+                        var cpm = bidResponse.cpm;
+                            if (cpm < 0.05) {
+                                return '0.01';
+                            } else if (cpm < 1) {
+                                return (Math.floor(cpm * 20) / 20).toFixed(2);
+                            } else if (cpm < 5) {
+                                return (Math.floor(cpm * 10) / 10).toFixed(2);
+                            } else if (cpm < 20) {
+                                return (Math.floor(cpm * 2) / 2).toFixed(2);
+                            } else {
+                                return '20.00';
+                            }
+                    }
+                }]
+            },
+            brealtime: {
+                bidCpmAdjustment: function(bidCpm) {
+                    return bidCpm * .80;
+                }
+            }
+        };
+        pbjs.requestBids({
+            bidsBackHandler: function(bidResponses) {
+                initAdserver();
+            },
+            timeout: PREBID_TIMEOUT
+        })
+    });
+</script>
+<script type='text/javascript'>
+    googletag.cmd.push(function() {
+
+        pbjs.que.push(function() {
+            pbjs.setTargetingForGPTAsync();
+        });
+
+        googletag.pubads().enableSingleRequest();
+        googletag.enableServices();
+    });
+</script>
+
+
+
+<!-- BODY codes -->
+<div id='div-gpt-ad-MOB_320_50'>
+<script type='text/javascript'>
+googletag.cmd.push(function() { googletag.display('div-gpt-ad-MOB_320_50'); });
+</script>
+</div>
+<div id='div-gpt-ad-MOB_ATF_300_250'>
+<script type='text/javascript'>
+googletag.cmd.push(function() { googletag.display('div-gpt-ad-MOB_ATF_300_250'); });
+</script>
+</div>
+<div id='div-gpt-ad-MOB_BTF_300_250'>
+<script type='text/javascript'>
+googletag.cmd.push(function() { googletag.display('div-gpt-ad-MOB_BTF_300_250'); });
+</script>
+</div>
+<div id='div-gpt-ad-MOB_BTF_300_250_2'>
+<script type='text/javascript'>
+googletag.cmd.push(function() { googletag.display('div-gpt-ad-MOB_BTF_300_250_2'); });
+</script>
+</div>
