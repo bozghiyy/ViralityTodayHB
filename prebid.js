@@ -2256,6 +2256,8 @@
 	exports.registerBidAdapter(new AppnexusAdapter.createNew(), 'appnexus');
 	var KomoonaAdapter = __webpack_require__(14);
 	exports.registerBidAdapter(new KomoonaAdapter(), 'komoona');
+	var PulsepointAdapter = __webpack_require__(15);
+	exports.registerBidAdapter(new PulsepointAdapter(), 'pulsepoint');
 	exports.aliasBidAdapter('appnexus', 'brealtime');
 	
 	null;
@@ -3099,6 +3101,80 @@
 	};
 	
 	module.exports = KomoonaAdapter;
+
+/***/ },
+/* 15 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
+	var bidfactory = __webpack_require__(9);
+	var bidmanager = __webpack_require__(4);
+	var adloader = __webpack_require__(10);
+	
+	var PulsePointAdapter = function PulsePointAdapter() {
+	
+	  var getJsStaticUrl = window.location.protocol + '//tag.contextweb.com/getjs.static.js';
+	  var bidUrl = window.location.protocol + '//bid.contextweb.com/header/tag';
+	
+	  function _callBids(params) {
+	    if (typeof window.pp === 'undefined') {
+	      adloader.loadScript(getJsStaticUrl, function () {
+	        bid(params);
+	      }, true);
+	    } else {
+	      bid(params);
+	    }
+	  }
+	
+	  function bid(params) {
+	    var bids = params.bids;
+	    for (var i = 0; i < bids.length; i++) {
+	      var bidRequest = bids[i];
+	      var callback = bidResponseCallback(bidRequest);
+	      var ppBidRequest = new window.pp.Ad({
+	        cf: bidRequest.params.cf,
+	        cp: bidRequest.params.cp,
+	        ct: bidRequest.params.ct,
+	        cn: 1,
+	        ca: window.pp.requestActions.BID,
+	        cu: bidUrl,
+	        adUnitId: bidRequest.placementCode,
+	        callback: callback
+	      });
+	      ppBidRequest.display();
+	    }
+	  }
+	
+	  function bidResponseCallback(bid) {
+	    return function (bidResponse) {
+	      bidResponseAvailable(bid, bidResponse);
+	    };
+	  }
+	
+	  function bidResponseAvailable(bidRequest, bidResponse) {
+	    if (bidResponse) {
+	      var adSize = bidRequest.params.cf.toUpperCase().split('X');
+	      var bid = bidfactory.createBid(1);
+	      bid.bidderCode = bidRequest.bidder;
+	      bid.cpm = bidResponse.bidCpm;
+	      bid.ad = bidResponse.html;
+	      bid.width = adSize[0];
+	      bid.height = adSize[1];
+	      bidmanager.addBidResponse(bidRequest.placementCode, bid);
+	    } else {
+	      var passback = bidfactory.createBid(2);
+	      passback.bidderCode = bidRequest.bidder;
+	      bidmanager.addBidResponse(bidRequest.placementCode, passback);
+	    }
+	  }
+	
+	  return {
+	    callBids: _callBids
+	  };
+	};
+	
+	module.exports = PulsePointAdapter;
 
 /***/ }
 /******/ ]);
