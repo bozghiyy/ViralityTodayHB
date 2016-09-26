@@ -2254,8 +2254,8 @@
 	exports.registerBidAdapter(new AolAdapter(), 'aol');
 	var AppnexusAdapter = __webpack_require__(12);
 	exports.registerBidAdapter(new AppnexusAdapter.createNew(), 'appnexus');
-	var KomoonaAdapter = __webpack_require__(14);
-	exports.registerBidAdapter(new KomoonaAdapter(), 'komoona');
+	var SekindoAdapter = __webpack_require__(14);
+	exports.registerBidAdapter(new SekindoAdapter(), 'sekindo');
 	var PulsepointAdapter = __webpack_require__(15);
 	exports.registerBidAdapter(new PulsepointAdapter(), 'pulsepoint');
 	exports.aliasBidAdapter('appnexus', 'brealtime');
@@ -3028,80 +3028,104 @@
 
 	'use strict';
 	
+	var _utils = __webpack_require__(1);
+	
+	var CONSTANTS = __webpack_require__(2);
+	var utils = __webpack_require__(1);
 	var bidfactory = __webpack_require__(9);
 	var bidmanager = __webpack_require__(4);
-	var adloader = __webpack_require__(10);
 	
-	//Version: 1.2
-	
-	var KomoonaAdapter = function KomoonaAdapter() {
-	  var DATA_VER = '0.1';
-	  var KOMOONA_URL = "//s.komoona.com/kb/{DATA_VER}/kmn_sa_kb_c.{hbid}.js";
-	
-	  var KOMOONA_BIDDER_NAME = 'komoona';
-	  var _bidsMap = {};
+	var SekindoAdapter;
+	SekindoAdapter = function SekindoAdapter() {
 	
 	  function _callBids(params) {
-	    var kbConf = {
-	      ts_as: new Date().getTime(),
-	      hb_placements: [],
-	      kb_callback: _bid_arrived
-	    };
+	    var bids = params.bids;
+	    var bidsCount = bids.length;
 	
-	    var bids = params.bids || [];
-	    if (!bids || !bids.length) {
-	      return;
+	    var pubUrl = null;
+	    if (parent !== window) pubUrl = document.referrer;else pubUrl = window.location.href;
+	
+	    for (var i = 0; i < bidsCount; i++) {
+	      var bidReqeust = bids[i];
+	      var callbackId = bidReqeust.bidId;
+	      _requestBids(bidReqeust, callbackId, pubUrl);
+	      //store a reference to the bidRequest from the callback id
+	      //bidmanager.pbCallbackMap[callbackId] = bidReqeust;
 	    }
+	  }
 	
-	    var dataVersion = DATA_VER;
+	  pbjs.sekindoCB = function (callbackId, response) {
+	    var bidObj = (0, _utils.getBidRequest)(callbackId);
+	    if (typeof response !== 'undefined' && typeof response.cpm !== 'undefined') {
+	      var bid = [];
+	      if (bidObj) {
+	        var bidCode = bidObj.bidder;
+	        var placementCode = bidObj.placementCode;
 	
-	    for (var i in bids) {
-	      var currentBid = bids[i];
-	      _bidsMap[currentBid.params.placementId] = currentBid;
-	      kbConf.hdbdid = kbConf.hdbdid || currentBid.params.hbid;
-	      kbConf.encode_bid = kbConf.encode_bid || currentBid.params.encode_bid;
-	      kbConf.hb_placements.push(currentBid.params.placementId);
-	      if (currentBid.params.dataVersion) dataVersion = currentBid.params.dataVersion;
-	    }
+	        if (response.cpm !== undefined && response.cpm > 0) {
 	
-	    var scriptUrl = KOMOONA_URL.replace('{DATA_VER}', dataVersion).replace('{hbid}', kbConf.hdbdid);
+	          bid = bidfactory.createBid(CONSTANTS.STATUS.GOOD, callbackId);
+	          bid.adId = response.adId;
+	          bid.callback_uid = callbackId;
+	          bid.bidderCode = bidCode;
+	          bid.creative_id = response.adId;
+	          bid.cpm = parseFloat(response.cpm);
+	          bid.ad = response.ad;
+	          bid.width = response.width;
+	          bid.height = response.height;
 	
-	    adloader.loadScript(scriptUrl, function () {
-	      /*global KmnKB */
-	      if (typeof KmnKB === 'function') {
-	        KmnKB.start(kbConf);
+	          bidmanager.addBidResponse(placementCode, bid);
+	        } else {
+	          bid = bidfactory.createBid(CONSTANTS.STATUS.NO_BID, callbackId);
+	          bid.callback_uid = callbackId;
+	          bid.bidderCode = bidCode;
+	          bidmanager.addBidResponse(placementCode, bid);
+	        }
 	      }
-	    });
+	    } else {
+	      if (bidObj) {
+	        utils.logMessage('No prebid response for placement ' + bidObj.placementCode);
+	      } else {
+	        utils.logMessage('sekindo callback general error');
+	      }
+	    }
+	  };
+	
+	  function _requestBids(bid, callbackId, pubUrl) {
+	    //determine tag params
+	    var spaceId = utils.getBidIdParamater('spaceId', bid.params);
+	    var bidfloor = utils.getBidIdParamater('bidfloor', bid.params);
+	    var protocol = 'https:' === document.location.protocol ? 's' : '';
+	    var scriptSrc = 'https://live.sekindo.com/live/liveView.php?';
+	
+	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 's', spaceId);
+	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'pubUrl', pubUrl);
+	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'hbcb', callbackId);
+	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'dcpmflr', bidfloor);
+	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'hbto', pbjs.bidderTimeout);
+	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'protocol', protocol);
+	
+	    var html = '<scr' + 'ipt type="text/javascript" src="' + scriptSrc + '"></scr' + 'ipt>';
+	
+	    var iframe = utils.createInvisibleIframe();
+	    iframe.id = 'skIfr_' + callbackId;
+	
+	    var elToAppend = document.getElementsByTagName('head')[0];
+	    //insert the iframe into document
+	    elToAppend.insertBefore(iframe, elToAppend.firstChild);
+	
+	    var iframeDoc = utils.getIframeDocument(iframe);
+	    iframeDoc.open();
+	    iframeDoc.write(html);
+	    iframeDoc.close();
 	  }
 	
-	  function _bid_arrived(bid) {
-	    var bidToRegister = parseBid(bid);
-	    var placementCode = getPlacementCode(bid);
-	    bidmanager.addBidResponse(placementCode, bidToRegister);
-	  }
-	
-	  function parseBid(bid) {
-	    var bidResponse = bidfactory.createBid(1);
-	    bidResponse.bidderCode = KOMOONA_BIDDER_NAME;
-	    bidResponse.ad = bid.creative;
-	    bidResponse.cpm = bid.cpm;
-	    bidResponse.width = parseInt(bid.width);
-	    bidResponse.height = parseInt(bid.height);
-	
-	    return bidResponse;
-	  }
-	
-	  function getPlacementCode(bid) {
-	    return _bidsMap[bid.placementid].placementCode;
-	  }
-	  // Export the callBids function, so that prebid.js can execute this function
-	  // when the page asks to send out bid requests.
 	  return {
 	    callBids: _callBids
 	  };
 	};
 	
-	module.exports = KomoonaAdapter;
+	module.exports = SekindoAdapter;
 
 /***/ },
 /* 15 */
