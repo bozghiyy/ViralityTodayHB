@@ -4,6 +4,7 @@
     "appnexus",
     "sekindo",
     "pulsepoint",
+    "springserve",
     {
       "appnexus": {
         "alias": "brealtime"
