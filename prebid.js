@@ -48,25 +48,31 @@
 	
 	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 	
-	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; }; /** @module pbjs */
+	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; /** @module pbjs */
 	
-	var _utils = __webpack_require__(1);
+	var _prebidGlobal = __webpack_require__(1);
 	
-	__webpack_require__(3);
+	var _utils = __webpack_require__(2);
+	
+	var _video = __webpack_require__(4);
+	
+	__webpack_require__(23);
+	
+	var _url = __webpack_require__(16);
+	
+	var _cpmBucketManager = __webpack_require__(12);
 	
 	function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
 	
-	// if pbjs already exists in global document scope, use it, if not, create the object
-	window.pbjs = window.pbjs || {};
-	window.pbjs.que = window.pbjs.que || [];
-	var pbjs = window.pbjs;
-	var CONSTANTS = __webpack_require__(2);
-	var utils = __webpack_require__(1);
-	var bidmanager = __webpack_require__(4);
-	var adaptermanager = __webpack_require__(6);
-	var bidfactory = __webpack_require__(9);
-	var adloader = __webpack_require__(10);
-	var events = __webpack_require__(5);
+	var pbjs = (0, _prebidGlobal.getGlobal)();
+	var CONSTANTS = __webpack_require__(3);
+	var utils = __webpack_require__(2);
+	var bidmanager = __webpack_require__(11);
+	var adaptermanager = __webpack_require__(5);
+	var bidfactory = __webpack_require__(10);
+	var adloader = __webpack_require__(13);
+	var events = __webpack_require__(8);
+	var adserver = __webpack_require__(24);
 	
 	/* private variables */
 	
@@ -93,15 +99,24 @@
 	pbjs._adsReceived = [];
 	pbjs._sendAllBids = false;
 	
+	pbjs.bidderSettings = pbjs.bidderSettings || {};
+	
 	//default timeout for all bids
 	pbjs.bidderTimeout = pbjs.bidderTimeout || 3000;
+	
+	// current timeout set in `requestBids` or to default `bidderTimeout`
+	pbjs.cbTimeout = pbjs.cbTimeout || 200;
+	
+	// timeout buffer to adjust for bidder CDN latency
+	pbjs.timeoutBuffer = 200;
+	
 	pbjs.logging = pbjs.logging || false;
 	
 	//let the world know we are loaded
 	pbjs.libLoaded = true;
 	
 	//version auto generated from build
-	utils.logInfo('Prebid.js v0.12.0 loaded');
+	utils.logInfo('Prebid.js v0.14.0 loaded');
 	
 	//create adUnit array
 	pbjs.adUnits = pbjs.adUnits || [];
@@ -194,8 +209,17 @@
 	  }
 	}
 	
-	function getWinningBidTargeting() {
-	  var winners = pbjs._bidsReceived.map(function (bid) {
+	function getWinningBids(adUnitCode) {
+	  // use the given adUnitCode as a filter if present or all adUnitCodes if not
+	  var adUnitCodes = adUnitCode ? [adUnitCode] : pbjs.adUnits.map(function (adUnit) {
+	    return adUnit.code;
+	  });
+	
+	  return pbjs._bidsReceived.filter(function (bid) {
+	    return adUnitCodes.includes(bid.adUnitCode);
+	  }).filter(function (bid) {
+	    return bid.cpm > 0;
+	  }).map(function (bid) {
 	    return bid.adUnitCode;
 	  }).filter(_utils.uniques).map(function (adUnitCode) {
 	    return pbjs._bidsReceived.filter(function (bid) {
@@ -207,6 +231,10 @@
 	      timeToRespond: 0
 	    });
 	  });
+	}
+	
+	function getWinningBidTargeting() {
+	  var winners = getWinningBids();
 	
 	  // winning bids with deals need an hb_deal targeting key
 	  winners.filter(function (bid) {
@@ -231,9 +259,7 @@
 	    return bid.dealId;
 	  }).map(function (bid) {
 	    var dealKey = 'hb_deal_' + bid.bidderCode;
-	    return _defineProperty({}, bid.adUnitCode, CONSTANTS.TARGETING_KEYS.map(function (key) {
-	      return _defineProperty({}, (key + '_' + bid.bidderCode).substring(0, 20), [bid.adserverTargeting[key]]);
-	    }).concat(_defineProperty({}, dealKey, [bid.adserverTargeting[dealKey]])));
+	    return _defineProperty({}, bid.adUnitCode, getTargetingMap(bid, CONSTANTS.TARGETING_KEYS).concat(_defineProperty({}, dealKey.substring(0, 20), [bid.adserverTargeting[dealKey]])));
 	  });
 	}
 	
@@ -241,28 +267,27 @@
 	 * Get custom targeting keys for bids that have `alwaysUseBid=true`.
 	 */
 	function getAlwaysUseBidTargeting() {
+	  //in case using a custom standard key set, we'll capture those here
+	  var standardKeys = bidmanager.getStandardBidderAdServerTargeting().map(function (targeting) {
+	    return targeting.key;
+	  });
+	  //then append standard keys defined in the library.
+	  standardKeys = standardKeys.concat(CONSTANTS.TARGETING_KEYS).filter(_utils.uniques);
 	  return pbjs._bidsReceived.map(function (bid) {
 	    if (bid.alwaysUseBid) {
-	      var _ret = function () {
-	        var standardKeys = CONSTANTS.TARGETING_KEYS;
-	        return {
-	          v: _defineProperty({}, bid.adUnitCode, Object.keys(bid.adserverTargeting, function (key) {
-	            return key;
-	          }).map(function (key) {
-	            // Get only the non-standard keys of the losing bids, since we
-	            // don't want to override the standard keys of the winning bid.
-	            if (standardKeys.indexOf(key) > -1) {
-	              return;
-	            }
+	      return _defineProperty({}, bid.adUnitCode, Object.keys(bid.adserverTargeting, function (key) {
+	        return key;
+	      }).map(function (key) {
+	        // Get only the non-standard keys of the losing bids, since we
+	        // don't want to override the standard keys of the winning bid.
+	        if (standardKeys.indexOf(key) > -1) {
+	          return;
+	        }
 	
-	            return _defineProperty({}, key.substring(0, 20), [bid.adserverTargeting[key]]);
-	          }).filter(function (key) {
-	            return key;
-	          }))
-	        };
-	      }();
-	
-	      if ((typeof _ret === 'undefined' ? 'undefined' : _typeof(_ret)) === "object") return _ret.v;
+	        return _defineProperty({}, key.substring(0, 20), [bid.adserverTargeting[key]]);
+	      }).filter(function (key) {
+	        return key;
+	      }));
 	    }
 	  }).filter(function (bid) {
 	    return bid;
@@ -274,19 +299,23 @@
 	
 	  return pbjs._bidsReceived.map(function (bid) {
 	    if (bid.adserverTargeting) {
-	      return _defineProperty({}, bid.adUnitCode, standardKeys.map(function (key) {
-	        return _defineProperty({}, (key + '_' + bid.bidderCode).substring(0, 20), [bid.adserverTargeting[key]]);
-	      }));
+	      return _defineProperty({}, bid.adUnitCode, getTargetingMap(bid, standardKeys));
 	    }
 	  }).filter(function (bid) {
 	    return bid;
 	  }); // removes empty elements in array
 	}
 	
+	function getTargetingMap(bid, keys) {
+	  return keys.map(function (key) {
+	    return _defineProperty({}, (key + '_' + bid.bidderCode).substring(0, 20), [bid.adserverTargeting[key]]);
+	  });
+	}
+	
 	function getAllTargeting() {
 	  // Get targeting for the winning bid. Add targeting for any bids that have
 	  // `alwaysUseBid=true`. If sending all bids is enabled, add targeting for losing bids.
-	  var targeting = getDealTargeting().concat(getWinningBidTargeting()).concat(getAlwaysUseBidTargeting()).concat(pbjs._sendAllBids ? getBidLandscapeTargeting() : []);
+	  var targeting = getWinningBidTargeting().concat(getAlwaysUseBidTargeting()).concat(pbjs._sendAllBids ? getBidLandscapeTargeting() : []).concat(getDealTargeting());
 	
 	  //store a reference of the targeting keys
 	  targeting.map(function (adUnitCode) {
@@ -341,8 +370,15 @@
 	  responses.filter(function (bid) {
 	    return bid.getStatusCode && bid.getStatusCode() === 2;
 	  }).forEach(function (bid) {
-	    return responses.slice(responses.indexOf(bid), 1);
+	    return responses.splice(responses.indexOf(bid), 1);
 	  });
+	}
+	
+	function setRenderSize(doc, width, height) {
+	  if (doc.defaultView && doc.defaultView.frameElement) {
+	    doc.defaultView.frameElement.width = width;
+	    doc.defaultView.frameElement.height = height;
+	  }
 	}
 	
 	//////////////////////////////////
@@ -513,21 +549,16 @@
 	        var url = adObject.adUrl;
 	        var ad = adObject.ad;
 	
-	        if (ad) {
+	        if (doc === document || adObject.mediaType === 'video') {
+	          utils.logError('Error trying to write ad. Ad render call ad id ' + id + ' was prevented from writing to the main document.');
+	        } else if (ad) {
 	          doc.write(ad);
 	          doc.close();
-	          if (doc.defaultView && doc.defaultView.frameElement) {
-	            doc.defaultView.frameElement.width = width;
-	            doc.defaultView.frameElement.height = height;
-	          }
+	          setRenderSize(doc, width, height);
 	        } else if (url) {
 	          doc.write('<IFRAME SRC="' + url + '" FRAMEBORDER="0" SCROLLING="no" MARGINHEIGHT="0" MARGINWIDTH="0" TOPMARGIN="0" LEFTMARGIN="0" ALLOWTRANSPARENCY="true" WIDTH="' + width + '" HEIGHT="' + height + '"></IFRAME>');
 	          doc.close();
-	
-	          if (doc.defaultView && doc.defaultView.frameElement) {
-	            doc.defaultView.frameElement.width = width;
-	            doc.defaultView.frameElement.height = height;
-	          }
+	          setRenderSize(doc, width, height);
 	        } else {
 	          utils.logError('Error trying to write ad. No ad for bid response id: ' + id);
 	        }
@@ -575,12 +606,12 @@
 	 * @param adUnitCodes
 	 */
 	pbjs.requestBids = function (_ref15) {
-	  var bidsBackHandler = _ref15.bidsBackHandler;
-	  var timeout = _ref15.timeout;
-	  var adUnits = _ref15.adUnits;
-	  var adUnitCodes = _ref15.adUnitCodes;
+	  var bidsBackHandler = _ref15.bidsBackHandler,
+	      timeout = _ref15.timeout,
+	      adUnits = _ref15.adUnits,
+	      adUnitCodes = _ref15.adUnitCodes;
 	
-	  var cbTimeout = timeout || pbjs.bidderTimeout;
+	  var cbTimeout = pbjs.cbTimeout = timeout || pbjs.bidderTimeout;
 	  adUnits = adUnits || pbjs.adUnits;
 	
 	  // if specific adUnitCodes filter adUnits for those codes
@@ -590,24 +621,33 @@
 	    });
 	  }
 	
+	  // for video-enabled adUnits, only request bids if all bidders support video
+	  var invalidVideoAdUnits = adUnits.filter(_video.videoAdUnit).filter(_video.hasNonVideoBidder);
+	  invalidVideoAdUnits.forEach(function (adUnit) {
+	    utils.logError('adUnit ' + adUnit.code + ' has \'mediaType\' set to \'video\' but contains a bidder that doesn\'t support video. No Prebid demand requests will be triggered for this adUnit.');
+	    for (var i = 0; i < adUnits.length; i++) {
+	      if (adUnits[i].code === adUnit.code) {
+	        adUnits.splice(i, 1);
+	      }
+	    }
+	  });
+	
 	  if (auctionRunning) {
 	    bidRequestQueue.push(function () {
-	      pbjs.requestBids({ bidsBackHandler: bidsBackHandler, cbTimeout: cbTimeout, adUnits: adUnits });
+	      pbjs.requestBids({ bidsBackHandler: bidsBackHandler, timeout: cbTimeout, adUnits: adUnits });
 	    });
 	    return;
-	  } else {
-	    auctionRunning = true;
-	    removeComplete();
 	  }
-	
-	  if ((typeof bidsBackHandler === 'undefined' ? 'undefined' : _typeof(bidsBackHandler)) === objectType_function) {
-	    bidmanager.addOneTimeCallback(bidsBackHandler);
-	  }
+	  auctionRunning = true;
+	  removeComplete();
 	
 	  utils.logInfo('Invoking pbjs.requestBids', arguments);
 	
 	  if (!adUnits || adUnits.length === 0) {
 	    utils.logMessage('No adUnits configured. No bids requested.');
+	    if ((typeof bidsBackHandler === 'undefined' ? 'undefined' : _typeof(bidsBackHandler)) === objectType_function) {
+	      bidmanager.addOneTimeCallback(bidsBackHandler, false);
+	    }
 	    bidmanager.executeCallback();
 	    return;
 	  }
@@ -615,9 +655,15 @@
 	  //set timeout for all bids
 	  var timedOut = true;
 	  var timeoutCallback = bidmanager.executeCallback.bind(bidmanager, timedOut);
-	  setTimeout(timeoutCallback, cbTimeout);
+	  var timer = setTimeout(timeoutCallback, cbTimeout);
+	  if ((typeof bidsBackHandler === 'undefined' ? 'undefined' : _typeof(bidsBackHandler)) === objectType_function) {
+	    bidmanager.addOneTimeCallback(bidsBackHandler, timer);
+	  }
 	
 	  adaptermanager.callBids({ adUnits: adUnits, adUnitCodes: adUnitCodes, cbTimeout: cbTimeout });
+	  if (pbjs._bidsRequested.length === 0) {
+	    bidmanager.executeCallback();
+	  }
 	};
 	
 	/**
@@ -807,12 +853,35 @@
 	  }
 	};
 	
+	/**
+	 * Sets a default price granularity scheme.
+	 * @param {String|Object} granularity - the granularity scheme.
+	 * "low": $0.50 increments, capped at $5 CPM
+	 * "medium": $0.10 increments, capped at $20 CPM (the default)
+	 * "high": $0.01 increments, capped at $20 CPM
+	 * "auto": Applies a sliding scale to determine granularity
+	 * "dense": Like "auto", but the bid price granularity uses smaller increments, especially at lower CPMs
+	 *
+	 * Alternatively a custom object can be specified:
+	 * { "buckets" : [{"min" : 0,"max" : 20,"increment" : 0.1,"cap" : true}]};
+	 * See http://prebid.org/dev-docs/publisher-api-reference.html#module_pbjs.setPriceGranularity for more details
+	 */
 	pbjs.setPriceGranularity = function (granularity) {
 	  utils.logInfo('Invoking pbjs.setPriceGranularity', arguments);
 	  if (!granularity) {
 	    utils.logError('Prebid Error: no value passed to `setPriceGranularity()`');
-	  } else {
+	    return;
+	  }
+	  if (typeof granularity === 'string') {
 	    bidmanager.setPriceGranularity(granularity);
+	  } else if ((typeof granularity === 'undefined' ? 'undefined' : _typeof(granularity)) === 'object') {
+	    if (!(0, _cpmBucketManager.isValidePriceConfig)(granularity)) {
+	      utils.logError('Invalid custom price value passed to `setPriceGranularity()`');
+	      return;
+	    }
+	    bidmanager.setCustomPriceBucket(granularity);
+	    bidmanager.setPriceGranularity(CONSTANTS.GRANULARITY_OPTIONS.CUSTOM);
+	    utils.logMessage('Using custom price granularity');
 	  }
 	};
 	
@@ -824,10 +893,80 @@
 	  return pbjs._winningBids;
 	};
 	
+	/**
+	 * Build master video tag from publishers adserver tag
+	 * @param {string} adserverTag default url
+	 * @param {object} options options for video tag
+	 */
+	pbjs.buildMasterVideoTagFromAdserverTag = function (adserverTag, options) {
+	  utils.logInfo('Invoking pbjs.buildMasterVideoTagFromAdserverTag', arguments);
+	  var urlComponents = (0, _url.parse)(adserverTag);
+	
+	  //return original adserverTag if no bids received
+	  if (pbjs._bidsReceived.length === 0) {
+	    return adserverTag;
+	  }
+	
+	  var masterTag = '';
+	  if (options.adserver.toLowerCase() === 'dfp') {
+	    var dfpAdserverObj = adserver.dfpAdserver(options, urlComponents);
+	    if (!dfpAdserverObj.verifyAdserverTag()) {
+	      utils.logError('Invalid adserverTag, required google params are missing in query string');
+	    }
+	    dfpAdserverObj.appendQueryParams();
+	    masterTag = (0, _url.format)(dfpAdserverObj.urlComponents);
+	  } else {
+	    utils.logError('Only DFP adserver is supported');
+	    return;
+	  }
+	  return masterTag;
+	};
+	
+	/**
+	 * Set the order bidders are called in. If not set, the bidders are called in
+	 * the order they are defined wihin the adUnit.bids array
+	 * @param {string} order - Order to call bidders in. Currently the only possible value
+	 * is 'random', which randomly shuffles the order
+	 */
+	pbjs.setBidderSequence = function (order) {
+	  if (order === CONSTANTS.ORDER.RANDOM) {
+	    adaptermanager.setBidderSequence(CONSTANTS.ORDER.RANDOM);
+	  }
+	};
+	
+	/**
+	 * Get array of highest cpm bids for all adUnits, or highest cpm bid
+	 * object for the given adUnit
+	 * @param {string} adUnitCode - optional ad unit code
+	 * @return {array} array containing highest cpm bid object(s)
+	 */
+	pbjs.getHighestCpmBids = function (adUnitCode) {
+	  return getWinningBids(adUnitCode);
+	};
+	
 	processQue();
 
 /***/ },
 /* 1 */
+/***/ function(module, exports) {
+
+	"use strict";
+	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	exports.getGlobal = getGlobal;
+	// if pbjs already exists in global document scope, use it, if not, create the object
+	// global defination should happen BEFORE imports to avoid global undefined errors.
+	window.pbjs = window.pbjs || {};
+	window.pbjs.que = window.pbjs.que || [];
+	
+	function getGlobal() {
+	  return window.pbjs;
+	}
+
+/***/ },
+/* 2 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
@@ -836,7 +975,7 @@
 	  value: true
 	});
 	
-	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
 	
 	exports.uniques = uniques;
 	exports.flatten = flatten;
@@ -846,7 +985,8 @@
 	exports.getBidderCodes = getBidderCodes;
 	exports.isGptPubadsDefined = isGptPubadsDefined;
 	exports.getHighestCpm = getHighestCpm;
-	var CONSTANTS = __webpack_require__(2);
+	exports.shuffle = shuffle;
+	var CONSTANTS = __webpack_require__(3);
 	
 	var objectType_object = 'object';
 	var objectType_string = 'string';
@@ -1020,12 +1160,16 @@
 	  }
 	};
 	
-	exports.getTopWindowUrl = function () {
+	exports.getTopWindowLocation = function () {
 	  try {
-	    return window.top.location.href;
+	    return window.top.location;
 	  } catch (e) {
-	    return window.location.href;
+	    return window.location;
 	  }
+	};
+	
+	exports.getTopWindowUrl = function () {
+	  return this.getTopWindowLocation().href;
 	};
 	
 	exports.logWarn = function (msg) {
@@ -1198,6 +1342,15 @@
 	};
 	
 	/**
+	 * Return if string is empty, null, or undefined
+	 * @param str string to test
+	 * @returns {boolean} if string is empty
+	 */
+	exports.isEmptyStr = function (str) {
+	  return this.isStr(str) && (!str || 0 === str.length);
+	};
+	
+	/**
 	 * Iterate object with the function
 	 * falls back to es5 `forEach`
 	 * @param {Array|Object} object
@@ -1356,8 +1509,10 @@
 	}
 	
 	function getBidderCodes() {
+	  var adUnits = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : pbjs.adUnits;
+	
 	  // this could memoize adUnits
-	  return pbjs.adUnits.map(function (unit) {
+	  return adUnits.map(function (unit) {
 	    return unit.bids.map(function (bid) {
 	      return bid.bidder;
 	    }).reduce(flatten, []);
@@ -1376,9 +1531,32 @@
 	  }
 	  return previous.cpm < current.cpm ? current : previous;
 	}
+	
+	/**
+	 * Fisher–Yates shuffle
+	 */
+	function shuffle(array) {
+	  var counter = array.length;
+	
+	  // while there are elements in the array
+	  while (counter > 0) {
+	    // pick a random index
+	    var index = Math.floor(Math.random() * counter);
+	
+	    // decrease counter by 1
+	    counter--;
+	
+	    // and swap the last element with it
+	    var temp = array[counter];
+	    array[counter] = array[index];
+	    array[index] = temp;
+	  }
+	
+	  return array;
+	}
 
 /***/ },
-/* 2 */
+/* 3 */
 /***/ function(module, exports) {
 
 	module.exports = {
@@ -1392,7 +1570,7 @@
 			"ADSERVER_TARGETING": "adserverTargeting",
 			"BD_SETTING_STANDARD": "standard"
 		},
-		"REPO_AND_VERSION": "prebid_prebid_0.12.0",
+		"REPO_AND_VERSION": "prebid_prebid_0.14.0",
 		"DEBUG_MODE": "pbjs_debug",
 		"STATUS": {
 			"GOOD": 1,
@@ -1422,12 +1600,16 @@
 		"EVENT_ID_PATHS": {
 			"bidWon": "adUnitCode"
 		},
+		"ORDER": {
+			"RANDOM": "random"
+		},
 		"GRANULARITY_OPTIONS": {
 			"LOW": "low",
 			"MEDIUM": "medium",
 			"HIGH": "high",
 			"AUTO": "auto",
-			"DENSE": "dense"
+			"DENSE": "dense",
+			"CUSTOM": "custom"
 		},
 		"TARGETING_KEYS": [
 			"hb_bidder",
@@ -1438,502 +1620,30 @@
 	};
 
 /***/ },
-/* 3 */
-/***/ function(module, exports) {
-
-	'use strict';
-	
-	/** @module polyfill
-	Misc polyfills
-	*/
-	/*jshint -W121 */
-	if (!Array.prototype.find) {
-	  Object.defineProperty(Array.prototype, "find", {
-	    value: function value(predicate) {
-	      if (this === null) {
-	        throw new TypeError('Array.prototype.find called on null or undefined');
-	      }
-	      if (typeof predicate !== 'function') {
-	        throw new TypeError('predicate must be a function');
-	      }
-	      var list = Object(this);
-	      var length = list.length >>> 0;
-	      var thisArg = arguments[1];
-	      var value;
-	
-	      for (var i = 0; i < length; i++) {
-	        value = list[i];
-	        if (predicate.call(thisArg, value, i, list)) {
-	          return value;
-	        }
-	      }
-	      return undefined;
-	    }
-	  });
-	}
-	
-	if (!Array.prototype.includes) {
-	  Object.defineProperty(Array.prototype, "includes", {
-	    value: function value(searchElement) {
-	      var O = Object(this);
-	      var len = parseInt(O.length, 10) || 0;
-	      if (len === 0) {
-	        return false;
-	      }
-	      var n = parseInt(arguments[1], 10) || 0;
-	      var k;
-	      if (n >= 0) {
-	        k = n;
-	      } else {
-	        k = len + n;
-	        if (k < 0) {
-	          k = 0;
-	        }
-	      }
-	      var currentElement;
-	      while (k < len) {
-	        currentElement = O[k];
-	        if (searchElement === currentElement || searchElement !== searchElement && currentElement !== currentElement) {
-	          // NaN !== NaN
-	          return true;
-	        }
-	        k++;
-	      }
-	      return false;
-	    }
-	  });
-	}
-
-/***/ },
 /* 4 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
-	
-	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-	
-	var _utils = __webpack_require__(1);
-	
-	var CONSTANTS = __webpack_require__(2);
-	var utils = __webpack_require__(1);
-	var events = __webpack_require__(5);
-	
-	var objectType_function = 'function';
-	
-	var externalCallbackByAdUnitArr = [];
-	var externalCallbackArr = [];
-	var externalOneTimeCallback = null;
-	var _granularity = CONSTANTS.GRANULARITY_OPTIONS.MEDIUM;
-	var defaultBidderSettingsMap = {};
-	
-	var _lgPriceCap = 5.00;
-	var _mgPriceCap = 20.00;
-	var _hgPriceCap = 20.00;
-	
-	/**
-	 * Returns a list of bidders that we haven't received a response yet
-	 * @return {array} [description]
-	 */
-	exports.getTimedOutBidders = function () {
-	  return pbjs._bidsRequested.map(getBidderCode).filter(_utils.uniques).filter(function (bidder) {
-	    return pbjs._bidsReceived.map(getBidders).filter(_utils.uniques).indexOf(bidder) < 0;
-	  });
-	};
-	
-	function timestamp() {
-	  return new Date().getTime();
-	}
-	
-	function getBidderCode(bidSet) {
-	  return bidSet.bidderCode;
-	}
-	
-	function getBidders(bid) {
-	  return bid.bidder;
-	}
-	
-	function bidsBackAdUnit(adUnitCode) {
-	  var requested = pbjs.adUnits.find(function (unit) {
-	    return unit.code === adUnitCode;
-	  }).bids.length;
-	  var received = pbjs._bidsReceived.filter(function (bid) {
-	    return bid.adUnitCode === adUnitCode;
-	  }).length;
-	  return requested === received;
-	}
-	
-	function add(a, b) {
-	  return a + b;
-	}
-	
-	function bidsBackAll() {
-	  var requested = pbjs._bidsRequested.map(function (bidSet) {
-	    return bidSet.bids.length;
-	  }).reduce(add);
-	  var received = pbjs._bidsReceived.length;
-	  return requested === received;
-	}
-	
-	exports.bidsBackAll = function () {
-	  return bidsBackAll();
-	};
-	
-	function getBidSetForBidder(bidder) {
-	  return pbjs._bidsRequested.find(function (bidSet) {
-	    return bidSet.bidderCode === bidder;
-	  }) || { start: null, requestId: null };
-	}
-	
-	/*
-	 *   This function should be called to by the bidder adapter to register a bid response
-	 */
-	exports.addBidResponse = function (adUnitCode, bid) {
-	  if (bid) {
-	
-	    _extends(bid, {
-	      requestId: getBidSetForBidder(bid.bidderCode).requestId,
-	      responseTimestamp: timestamp(),
-	      requestTimestamp: getBidSetForBidder(bid.bidderCode).start,
-	      cpm: bid.cpm || 0,
-	      bidder: bid.bidderCode,
-	      adUnitCode: adUnitCode
-	    });
-	
-	    bid.timeToRespond = bid.responseTimestamp - bid.requestTimestamp;
-	
-	    if (bid.timeToRespond > pbjs.bidderTimeout) {
-	      var timedOut = true;
-	
-	      this.executeCallback(timedOut);
-	    }
-	
-	    //emit the bidAdjustment event before bidResponse, so bid response has the adjusted bid value
-	    events.emit(CONSTANTS.EVENTS.BID_ADJUSTMENT, bid);
-	
-	    //emit the bidResponse event
-	    events.emit(CONSTANTS.EVENTS.BID_RESPONSE, bid);
-	
-	    //append price strings
-	    var priceStringsObj = getPriceBucketString(bid.cpm, bid.height, bid.width);
-	    bid.pbLg = priceStringsObj.low;
-	    bid.pbMg = priceStringsObj.med;
-	    bid.pbHg = priceStringsObj.high;
-	    bid.pbAg = priceStringsObj.auto;
-	    bid.pbDg = priceStringsObj.dense;
-	
-	    //if there is any key value pairs to map do here
-	    var keyValues = {};
-	    if (bid.bidderCode && bid.cpm !== 0) {
-	      keyValues = getKeyValueTargetingPairs(bid.bidderCode, bid);
-	
-	      if (bid.dealId) {
-	        keyValues['hb_deal_' + bid.bidderCode] = bid.dealId;
-	      }
-	
-	      bid.adserverTargeting = keyValues;
-	    }
-	
-	    pbjs._bidsReceived.push(bid);
-	  }
-	
-	  if (bid && bid.adUnitCode && bidsBackAdUnit(bid.adUnitCode)) {
-	    triggerAdUnitCallbacks(bid.adUnitCode);
-	  }
-	
-	  if (bidsBackAll()) {
-	    this.executeCallback();
-	  }
-	};
-	
-	function getKeyValueTargetingPairs(bidderCode, custBidObj) {
-	  var keyValues = {};
-	  var bidder_settings = pbjs.bidderSettings || {};
-	
-	  //1) set the keys from "standard" setting or from prebid defaults
-	  if (custBidObj && bidder_settings) {
-	    if (!bidder_settings[CONSTANTS.JSON_MAPPING.BD_SETTING_STANDARD]) {
-	      bidder_settings[CONSTANTS.JSON_MAPPING.BD_SETTING_STANDARD] = {
-	        adserverTargeting: [{
-	          key: 'hb_bidder',
-	          val: function val(bidResponse) {
-	            return bidResponse.bidderCode;
-	          }
-	        }, {
-	          key: 'hb_adid',
-	          val: function val(bidResponse) {
-	            return bidResponse.adId;
-	          }
-	        }, {
-	          key: 'hb_pb',
-	          val: function val(bidResponse) {
-	            if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.AUTO) {
-	              return bidResponse.pbAg;
-	            } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.DENSE) {
-	              return bidResponse.pbDg;
-	            } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.LOW) {
-	              return bidResponse.pbLg;
-	            } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.MEDIUM) {
-	              return bidResponse.pbMg;
-	            } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.HIGH) {
-	              return bidResponse.pbHg;
-	            }
-	          }
-	        }, {
-	          key: 'hb_size',
-	          val: function val(bidResponse) {
-	            return bidResponse.size;
-	          }
-	        }]
-	      };
-	    }
-	
-	    setKeys(keyValues, bidder_settings[CONSTANTS.JSON_MAPPING.BD_SETTING_STANDARD], custBidObj);
-	  }
-	
-	  //2) set keys from specific bidder setting override if they exist
-	  if (bidderCode && custBidObj && bidder_settings && bidder_settings[bidderCode] && bidder_settings[bidderCode][CONSTANTS.JSON_MAPPING.ADSERVER_TARGETING]) {
-	    setKeys(keyValues, bidder_settings[bidderCode], custBidObj);
-	    custBidObj.alwaysUseBid = bidder_settings[bidderCode].alwaysUseBid;
-	  }
-	
-	  //2) set keys from standard setting. NOTE: this API doesn't seem to be in use by any Adapter
-	  else if (defaultBidderSettingsMap[bidderCode]) {
-	      setKeys(keyValues, defaultBidderSettingsMap[bidderCode], custBidObj);
-	      custBidObj.alwaysUseBid = defaultBidderSettingsMap[bidderCode].alwaysUseBid;
-	    }
-	
-	  return keyValues;
-	}
-	
-	exports.getKeyValueTargetingPairs = function () {
-	  return getKeyValueTargetingPairs.apply(undefined, arguments);
-	};
-	
-	function setKeys(keyValues, bidderSettings, custBidObj) {
-	  var targeting = bidderSettings[CONSTANTS.JSON_MAPPING.ADSERVER_TARGETING];
-	  custBidObj.size = custBidObj.getSize();
-	
-	  utils._each(targeting, function (kvPair) {
-	    var key = kvPair.key;
-	    var value = kvPair.val;
-	
-	    if (keyValues[key]) {
-	      utils.logWarn('The key: ' + key + ' is getting ovewritten');
-	    }
-	
-	    if (utils.isFn(value)) {
-	      try {
-	        keyValues[key] = value(custBidObj);
-	      } catch (e) {
-	        utils.logError('bidmanager', 'ERROR', e);
-	      }
-	    } else {
-	      keyValues[key] = value;
-	    }
-	  });
-	
-	  return keyValues;
-	}
-	
-	exports.setPriceGranularity = function setPriceGranularity(granularity) {
-	  var granularityOptions = CONSTANTS.GRANULARITY_OPTIONS;
-	  if (Object.keys(granularityOptions).filter(function (option) {
-	    return granularity === granularityOptions[option];
-	  })) {
-	    _granularity = granularity;
-	  } else {
-	    utils.logWarn('Prebid Warning: setPriceGranularity was called with invalid setting, using' + ' `medium` as default.');
-	    _granularity = CONSTANTS.GRANULARITY_OPTIONS.MEDIUM;
-	  }
-	};
-	
-	exports.registerDefaultBidderSetting = function (bidderCode, defaultSetting) {
-	  defaultBidderSettingsMap[bidderCode] = defaultSetting;
-	};
-	
-	exports.executeCallback = function (timedOut) {
-	  if (externalCallbackArr.called !== true) {
-	    processCallbacks(externalCallbackArr);
-	    externalCallbackArr.called = true;
-	
-	    if (timedOut) {
-	      var timedOutBidders = this.getTimedOutBidders();
-	
-	      if (timedOutBidders.length) {
-	        events.emit(CONSTANTS.EVENTS.BID_TIMEOUT, timedOutBidders);
-	      }
-	    }
-	  }
-	
-	  //execute one time callback
-	  if (externalOneTimeCallback) {
-	    try {
-	      processCallbacks([externalOneTimeCallback]);
-	    } finally {
-	      pbjs.clearAuction();
-	      externalOneTimeCallback = null;
-	    }
-	  }
-	};
-	
-	function triggerAdUnitCallbacks(adUnitCode) {
-	  //todo : get bid responses and send in args
-	  var params = [adUnitCode];
-	  processCallbacks(externalCallbackByAdUnitArr, params);
-	}
-	
-	function processCallbacks(callbackQueue) {
-	  var i;
-	  if (utils.isArray(callbackQueue)) {
-	    for (i = 0; i < callbackQueue.length; i++) {
-	      var func = callbackQueue[i];
-	      func.call(pbjs, pbjs._bidsReceived.reduce(groupByPlacement, {}));
-	    }
-	  }
-	}
-	
-	/**
-	 * groupByPlacement is a reduce function that converts an array of Bid objects
-	 * to an object with placement codes as keys, with each key representing an object
-	 * with an array of `Bid` objects for that placement
-	 * @param prev previous value as accumulator object
-	 * @param item current array item
-	 * @param idx current index
-	 * @param arr the array being reduced
-	 * @returns {*} as { [adUnitCode]: { bids: [Bid, Bid, Bid] } }
-	 */
-	function groupByPlacement(prev, item, idx, arr) {
-	  // this uses a standard "array to map" operation that could be abstracted further
-	  if (item.adUnitCode in Object.keys(prev)) {
-	    // if the adUnitCode key is present in the accumulator object, continue
-	    return prev;
-	  } else {
-	    // otherwise add the adUnitCode key to the accumulator object and set to an object with an
-	    // array of Bids for that adUnitCode
-	    prev[item.adUnitCode] = {
-	      bids: arr.filter(function (bid) {
-	        return bid.adUnitCode === item.adUnitCode;
-	      })
-	    };
-	    return prev;
-	  }
-	}
-	
-	/**
-	 * Add a one time callback, that is discarded after it is called
-	 * @param {Function} callback [description]
-	 */
-	exports.addOneTimeCallback = function (callback) {
-	  externalOneTimeCallback = callback;
-	};
-	
-	exports.addCallback = function (id, callback, cbEvent) {
-	  callback.id = id;
-	  if (CONSTANTS.CB.TYPE.ALL_BIDS_BACK === cbEvent) {
-	    externalCallbackArr.push(callback);
-	  } else if (CONSTANTS.CB.TYPE.AD_UNIT_BIDS_BACK === cbEvent) {
-	    externalCallbackByAdUnitArr.push(callback);
-	  }
-	};
-	
-	//register event for bid adjustment
-	events.on(CONSTANTS.EVENTS.BID_ADJUSTMENT, function (bid) {
-	  adjustBids(bid);
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
 	});
+	exports.hasNonVideoBidder = exports.videoAdUnit = undefined;
 	
-	function adjustBids(bid) {
-	  var code = bid.bidderCode;
-	  var bidPriceAdjusted = bid.cpm;
-	  if (code && pbjs.bidderSettings && pbjs.bidderSettings[code]) {
-	    if (_typeof(pbjs.bidderSettings[code].bidCpmAdjustment) === objectType_function) {
-	      try {
-	        bidPriceAdjusted = pbjs.bidderSettings[code].bidCpmAdjustment.call(null, bid.cpm, utils.extend({}, bid));
-	      } catch (e) {
-	        utils.logError('Error during bid adjustment', 'bidmanager.js', e);
-	      }
-	    }
-	  }
+	var _adaptermanager = __webpack_require__(5);
 	
-	  if (bidPriceAdjusted !== 0) {
-	    bid.cpm = bidPriceAdjusted;
-	  }
-	}
-	
-	exports.adjustBids = function () {
-	  return adjustBids.apply(undefined, arguments);
+	/**
+	 * Helper functions for working with video-enabled adUnits
+	 */
+	var videoAdUnit = exports.videoAdUnit = function videoAdUnit(adUnit) {
+	  return adUnit.mediaType === 'video';
 	};
-	
-	function getPriceBucketString(cpm) {
-	  var cpmFloat = 0;
-	  var returnObj = {
-	    low: '',
-	    med: '',
-	    high: '',
-	    auto: '',
-	    dense: ''
-	  };
-	  try {
-	    cpmFloat = parseFloat(cpm);
-	    if (cpmFloat) {
-	      //round to closest .5
-	      if (cpmFloat > _lgPriceCap) {
-	        returnObj.low = _lgPriceCap.toFixed(2);
-	      } else {
-	        returnObj.low = (Math.floor(cpm * 2) / 2).toFixed(2);
-	      }
-	
-	      //round to closest .1
-	      if (cpmFloat > _mgPriceCap) {
-	        returnObj.med = _mgPriceCap.toFixed(2);
-	      } else {
-	        returnObj.med = (Math.floor(cpm * 10) / 10).toFixed(2);
-	      }
-	
-	      //round to closest .01
-	      if (cpmFloat > _hgPriceCap) {
-	        returnObj.high = _hgPriceCap.toFixed(2);
-	      } else {
-	        returnObj.high = (Math.floor(cpm * 100) / 100).toFixed(2);
-	      }
-	
-	      // round auto default sliding scale
-	      if (cpmFloat <= 5) {
-	        // round to closest .05
-	        returnObj.auto = (Math.floor(cpm * 20) / 20).toFixed(2);
-	      } else if (cpmFloat <= 10) {
-	        // round to closest .10
-	        returnObj.auto = (Math.floor(cpm * 10) / 10).toFixed(2);
-	      } else if (cpmFloat <= 20) {
-	        // round to closest .50
-	        returnObj.auto = (Math.floor(cpm * 2) / 2).toFixed(2);
-	      } else {
-	        // cap at 20.00
-	        returnObj.auto = '20.00';
-	      }
-	
-	      // dense mode
-	      if (cpmFloat <= 3) {
-	        // round to closest .01
-	        returnObj.dense = (Math.floor(cpm * 100) / 100).toFixed(2);
-	      } else if (cpmFloat <= 8) {
-	        // round to closest .05
-	        returnObj.dense = (Math.floor(cpm * 20) / 20).toFixed(2);
-	      } else if (cpmFloat <= 20) {
-	        // round to closest .50
-	        returnObj.dense = (Math.floor(cpm * 2) / 2).toFixed(2);
-	      } else {
-	        // cap at 20.00
-	        returnObj.dense = '20.00';
-	      }
-	    }
-	  } catch (e) {
-	    this.logError('Exception parsing CPM :' + e.message);
-	  }
-	
-	  return returnObj;
-	}
+	var nonVideoBidder = function nonVideoBidder(bid) {
+	  return !_adaptermanager.videoAdapters.includes(bid.bidder);
+	};
+	var hasNonVideoBidder = exports.hasNonVideoBidder = function hasNonVideoBidder(adUnit) {
+	  return adUnit.bids.filter(nonVideoBidder).length;
+	};
 
 /***/ },
 /* 5 */
@@ -1941,11 +1651,324 @@
 
 	'use strict';
 	
+	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
+	
+	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; /** @module adaptermanger */
+	
+	var _utils = __webpack_require__(2);
+	
+	var _sizeMapping = __webpack_require__(6);
+	
+	var _baseAdapter = __webpack_require__(7);
+	
+	var utils = __webpack_require__(2);
+	var CONSTANTS = __webpack_require__(3);
+	var events = __webpack_require__(8);
+	
+	
+	var _bidderRegistry = {};
+	exports.bidderRegistry = _bidderRegistry;
+	
+	var _analyticsRegistry = {};
+	var _bidderSequence = null;
+	
+	function getBids(_ref) {
+	  var bidderCode = _ref.bidderCode,
+	      requestId = _ref.requestId,
+	      bidderRequestId = _ref.bidderRequestId,
+	      adUnits = _ref.adUnits;
+	
+	  return adUnits.map(function (adUnit) {
+	    return adUnit.bids.filter(function (bid) {
+	      return bid.bidder === bidderCode;
+	    }).map(function (bid) {
+	      var sizes = adUnit.sizes;
+	      if (adUnit.sizeMapping) {
+	        var sizeMapping = (0, _sizeMapping.mapSizes)(adUnit);
+	        if (sizeMapping === '') {
+	          return '';
+	        }
+	        sizes = sizeMapping;
+	      }
+	      return _extends(bid, {
+	        placementCode: adUnit.code,
+	        mediaType: adUnit.mediaType,
+	        sizes: sizes,
+	        bidId: utils.getUniqueIdentifierStr(),
+	        bidderRequestId: bidderRequestId,
+	        requestId: requestId
+	      });
+	    });
+	  }).reduce(_utils.flatten, []).filter(function (val) {
+	    return val !== '';
+	  });
+	}
+	
+	exports.callBids = function (_ref2) {
+	  var adUnits = _ref2.adUnits,
+	      cbTimeout = _ref2.cbTimeout;
+	
+	  var requestId = utils.generateUUID();
+	  var auctionStart = Date.now();
+	
+	  var auctionInit = {
+	    timestamp: auctionStart,
+	    requestId: requestId
+	  };
+	  events.emit(CONSTANTS.EVENTS.AUCTION_INIT, auctionInit);
+	
+	  var bidderCodes = (0, _utils.getBidderCodes)(adUnits);
+	  if (_bidderSequence === CONSTANTS.ORDER.RANDOM) {
+	    bidderCodes = (0, _utils.shuffle)(bidderCodes);
+	  }
+	
+	  bidderCodes.forEach(function (bidderCode) {
+	    var adapter = _bidderRegistry[bidderCode];
+	    if (adapter) {
+	      var bidderRequestId = utils.getUniqueIdentifierStr();
+	      var bidderRequest = {
+	        bidderCode: bidderCode,
+	        requestId: requestId,
+	        bidderRequestId: bidderRequestId,
+	        bids: getBids({ bidderCode: bidderCode, requestId: requestId, bidderRequestId: bidderRequestId, adUnits: adUnits }),
+	        start: new Date().getTime(),
+	        auctionStart: auctionStart,
+	        timeout: cbTimeout
+	      };
+	      if (bidderRequest.bids && bidderRequest.bids.length !== 0) {
+	        utils.logMessage('CALLING BIDDER ======= ' + bidderCode);
+	        pbjs._bidsRequested.push(bidderRequest);
+	        events.emit(CONSTANTS.EVENTS.BID_REQUESTED, bidderRequest);
+	        adapter.callBids(bidderRequest);
+	      }
+	    } else {
+	      utils.logError('Adapter trying to be called which does not exist: ' + bidderCode + ' adaptermanager.callBids');
+	    }
+	  });
+	};
+	
+	exports.registerBidAdapter = function (bidAdaptor, bidderCode) {
+	  if (bidAdaptor && bidderCode) {
+	
+	    if (_typeof(bidAdaptor.callBids) === CONSTANTS.objectType_function) {
+	      _bidderRegistry[bidderCode] = bidAdaptor;
+	    } else {
+	      utils.logError('Bidder adaptor error for bidder code: ' + bidderCode + 'bidder must implement a callBids() function');
+	    }
+	  } else {
+	    utils.logError('bidAdaptor or bidderCode not specified');
+	  }
+	};
+	
+	exports.aliasBidAdapter = function (bidderCode, alias) {
+	  var existingAlias = _bidderRegistry[alias];
+	
+	  if ((typeof existingAlias === 'undefined' ? 'undefined' : _typeof(existingAlias)) === CONSTANTS.objectType_undefined) {
+	    var bidAdaptor = _bidderRegistry[bidderCode];
+	
+	    if ((typeof bidAdaptor === 'undefined' ? 'undefined' : _typeof(bidAdaptor)) === CONSTANTS.objectType_undefined) {
+	      utils.logError('bidderCode "' + bidderCode + '" is not an existing bidder.', 'adaptermanager.aliasBidAdapter');
+	    } else {
+	      try {
+	        var newAdapter = null;
+	        if (bidAdaptor instanceof _baseAdapter.BaseAdapter) {
+	          //newAdapter = new bidAdaptor.constructor(alias);
+	          utils.logError(bidderCode + ' bidder does not currently support aliasing.', 'adaptermanager.aliasBidAdapter');
+	        } else {
+	          newAdapter = bidAdaptor.createNew();
+	          newAdapter.setBidderCode(alias);
+	          this.registerBidAdapter(newAdapter, alias);
+	        }
+	      } catch (e) {
+	        utils.logError(bidderCode + ' bidder does not currently support aliasing.', 'adaptermanager.aliasBidAdapter');
+	      }
+	    }
+	  } else {
+	    utils.logMessage('alias name "' + alias + '" has been already specified.');
+	  }
+	};
+	
+	exports.registerAnalyticsAdapter = function (_ref3) {
+	  var adapter = _ref3.adapter,
+	      code = _ref3.code;
+	
+	  if (adapter && code) {
+	
+	    if (_typeof(adapter.enableAnalytics) === CONSTANTS.objectType_function) {
+	      adapter.code = code;
+	      _analyticsRegistry[code] = adapter;
+	    } else {
+	      utils.logError('Prebid Error: Analytics adaptor error for analytics "' + code + '"\n        analytics adapter must implement an enableAnalytics() function');
+	    }
+	  } else {
+	    utils.logError('Prebid Error: analyticsAdapter or analyticsCode not specified');
+	  }
+	};
+	
+	exports.enableAnalytics = function (config) {
+	  if (!utils.isArray(config)) {
+	    config = [config];
+	  }
+	
+	  utils._each(config, function (adapterConfig) {
+	    var adapter = _analyticsRegistry[adapterConfig.provider];
+	    if (adapter) {
+	      adapter.enableAnalytics(adapterConfig);
+	    } else {
+	      utils.logError('Prebid Error: no analytics adapter found in registry for\n        ' + adapterConfig.provider + '.');
+	    }
+	  });
+	};
+	
+	exports.setBidderSequence = function (order) {
+	  _bidderSequence = order;
+	};
+	
+	var AdequantAdapter = __webpack_require__(9);
+	exports.registerBidAdapter(new AdequantAdapter(), 'adequant');
+	var AolAdapter = __webpack_require__(14);
+	exports.registerBidAdapter(new AolAdapter(), 'aol');
+	var AppnexusAdapter = __webpack_require__(17);
+	exports.registerBidAdapter(new AppnexusAdapter.createNew(), 'appnexus');
+	var PulsepointAdapter = __webpack_require__(19);
+	exports.registerBidAdapter(new PulsepointAdapter(), 'pulsepoint');
+	var SpringserveAdapter = __webpack_require__(20);
+	exports.registerBidAdapter(new SpringserveAdapter(), 'springserve');
+	var SonobiAdapter = __webpack_require__(21);
+	exports.registerBidAdapter(new SonobiAdapter(), 'sonobi');
+	exports.aliasBidAdapter('appnexus', 'brealtime');
+	exports.aliasBidAdapter('appnexus', 'sekindo');
+	exports.videoAdapters = [];
+	
+	var ga = __webpack_require__(22).default || __webpack_require__(22);
+	exports.registerAnalyticsAdapter({ adapter: ga, code: 'ga' });
+
+/***/ },
+/* 6 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	exports.setWindow = exports.getScreenWidth = exports.mapSizes = undefined;
+	
+	var _utils = __webpack_require__(2);
+	
+	var utils = _interopRequireWildcard(_utils);
+	
+	function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+	
+	var _win = void 0; /**
+	                    * @module sizeMapping
+	                    */
+	
+	
+	function mapSizes(adUnit) {
+	  if (!isSizeMappingValid(adUnit.sizeMapping)) {
+	    return adUnit.sizes;
+	  }
+	  var width = getScreenWidth();
+	  if (!width) {
+	    //size not detected - get largest value set for desktop
+	    var _mapping = adUnit.sizeMapping.reduce(function (prev, curr) {
+	      return prev.minWidth < curr.minWidth ? curr : prev;
+	    });
+	    if (_mapping.sizes) {
+	      return _mapping.sizes;
+	    }
+	    return adUnit.sizes;
+	  }
+	  var sizes = '';
+	  var mapping = adUnit.sizeMapping.find(function (sizeMapping) {
+	    return width > sizeMapping.minWidth;
+	  });
+	  if (mapping && mapping.sizes) {
+	    sizes = mapping.sizes;
+	    utils.logMessage('AdUnit : ' + adUnit.code + ' resized based on device width to : ' + sizes);
+	  } else {
+	    utils.logMessage('AdUnit : ' + adUnit.code + ' not mapped to any sizes for device width. This request will be suppressed.');
+	  }
+	  return sizes;
+	}
+	
+	function isSizeMappingValid(sizeMapping) {
+	  if (utils.isArray(sizeMapping) && sizeMapping.length > 0) {
+	    return true;
+	  }
+	  utils.logInfo('No size mapping defined');
+	  return false;
+	}
+	
+	function getScreenWidth(win) {
+	  var w = win || _win || window;
+	  if (w.screen && w.screen.width) {
+	    return w.screen.width;
+	  }
+	  return 0;
+	}
+	
+	function setWindow(win) {
+	  _win = win;
+	}
+	
+	exports.mapSizes = mapSizes;
+	exports.getScreenWidth = getScreenWidth;
+	exports.setWindow = setWindow;
+
+/***/ },
+/* 7 */
+/***/ function(module, exports) {
+
+	'use strict';
+	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	
+	var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+	
+	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+	
+	var BaseAdapter = exports.BaseAdapter = function () {
+	  function BaseAdapter(code) {
+	    _classCallCheck(this, BaseAdapter);
+	
+	    this.code = code;
+	  }
+	
+	  _createClass(BaseAdapter, [{
+	    key: 'getCode',
+	    value: function getCode() {
+	      return this.code;
+	    }
+	  }, {
+	    key: 'setCode',
+	    value: function setCode(code) {
+	      this.code = code;
+	    }
+	  }, {
+	    key: 'callBids',
+	    value: function callBids() {
+	      throw 'adapter implementation must override callBids method';
+	    }
+	  }]);
+
+	  return BaseAdapter;
+	}();
+
+/***/ },
+/* 8 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
 	/**
 	 * events.js
 	 */
-	var utils = __webpack_require__(1);
-	var CONSTANTS = __webpack_require__(2);
+	var utils = __webpack_require__(2);
+	var CONSTANTS = __webpack_require__(3);
 	var slice = Array.prototype.slice;
 	var push = Array.prototype.push;
 	
@@ -2095,230 +2118,18 @@
 	}();
 
 /***/ },
-/* 6 */
+/* 9 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
 	
-	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; /** @module adaptermanger */
-	
-	var _utils = __webpack_require__(1);
-	
-	var _baseAdapter = __webpack_require__(7);
-	
-	var utils = __webpack_require__(1);
-	var CONSTANTS = __webpack_require__(2);
-	var events = __webpack_require__(5);
-	
-	
-	var _bidderRegistry = {};
-	exports.bidderRegistry = _bidderRegistry;
-	
-	var _analyticsRegistry = {};
-	
-	function getBids(_ref) {
-	  var bidderCode = _ref.bidderCode;
-	  var requestId = _ref.requestId;
-	  var bidderRequestId = _ref.bidderRequestId;
-	  var adUnits = _ref.adUnits;
-	
-	  return adUnits.map(function (adUnit) {
-	    return adUnit.bids.filter(function (bid) {
-	      return bid.bidder === bidderCode;
-	    }).map(function (bid) {
-	      return _extends(bid, {
-	        placementCode: adUnit.code,
-	        sizes: adUnit.sizes,
-	        bidId: utils.getUniqueIdentifierStr(),
-	        bidderRequestId: bidderRequestId,
-	        requestId: requestId
-	      });
-	    });
-	  }).reduce(_utils.flatten, []);
-	}
-	
-	exports.callBids = function (_ref2) {
-	  var adUnits = _ref2.adUnits;
-	  var cbTimeout = _ref2.cbTimeout;
-	
-	  var requestId = utils.generateUUID();
-	
-	  var auctionInit = {
-	    timestamp: Date.now(),
-	    requestId: requestId
-	  };
-	  events.emit(CONSTANTS.EVENTS.AUCTION_INIT, auctionInit);
-	
-	  (0, _utils.getBidderCodes)(adUnits).forEach(function (bidderCode) {
-	    var adapter = _bidderRegistry[bidderCode];
-	    if (adapter) {
-	      var bidderRequestId = utils.getUniqueIdentifierStr();
-	      var bidderRequest = {
-	        bidderCode: bidderCode,
-	        requestId: requestId,
-	        bidderRequestId: bidderRequestId,
-	        bids: getBids({ bidderCode: bidderCode, requestId: requestId, bidderRequestId: bidderRequestId, adUnits: adUnits }),
-	        start: new Date().getTime(),
-	        timeout: cbTimeout
-	      };
-	      utils.logMessage('CALLING BIDDER ======= ' + bidderCode);
-	      pbjs._bidsRequested.push(bidderRequest);
-	      events.emit(CONSTANTS.EVENTS.BID_REQUESTED, bidderRequest);
-	      if (bidderRequest.bids && bidderRequest.bids.length) {
-	        adapter.callBids(bidderRequest);
-	      }
-	    } else {
-	      utils.logError('Adapter trying to be called which does not exist: ' + bidderCode + ' adaptermanager.callBids');
-	    }
-	  });
-	};
-	
-	exports.registerBidAdapter = function (bidAdaptor, bidderCode) {
-	  if (bidAdaptor && bidderCode) {
-	
-	    if (_typeof(bidAdaptor.callBids) === CONSTANTS.objectType_function) {
-	      _bidderRegistry[bidderCode] = bidAdaptor;
-	    } else {
-	      utils.logError('Bidder adaptor error for bidder code: ' + bidderCode + 'bidder must implement a callBids() function');
-	    }
-	  } else {
-	    utils.logError('bidAdaptor or bidderCode not specified');
-	  }
-	};
-	
-	exports.aliasBidAdapter = function (bidderCode, alias) {
-	  var existingAlias = _bidderRegistry[alias];
-	
-	  if ((typeof existingAlias === 'undefined' ? 'undefined' : _typeof(existingAlias)) === CONSTANTS.objectType_undefined) {
-	    var bidAdaptor = _bidderRegistry[bidderCode];
-	
-	    if ((typeof bidAdaptor === 'undefined' ? 'undefined' : _typeof(bidAdaptor)) === CONSTANTS.objectType_undefined) {
-	      utils.logError('bidderCode "' + bidderCode + '" is not an existing bidder.', 'adaptermanager.aliasBidAdapter');
-	    } else {
-	      try {
-	        var newAdapter = null;
-	        if (bidAdaptor instanceof _baseAdapter.BaseAdapter) {
-	          //newAdapter = new bidAdaptor.constructor(alias);
-	          utils.logError(bidderCode + ' bidder does not currently support aliasing.', 'adaptermanager.aliasBidAdapter');
-	        } else {
-	          newAdapter = bidAdaptor.createNew();
-	          newAdapter.setBidderCode(alias);
-	          this.registerBidAdapter(newAdapter, alias);
-	        }
-	      } catch (e) {
-	        utils.logError(bidderCode + ' bidder does not currently support aliasing.', 'adaptermanager.aliasBidAdapter');
-	      }
-	    }
-	  } else {
-	    utils.logMessage('alias name "' + alias + '" has been already specified.');
-	  }
-	};
-	
-	exports.registerAnalyticsAdapter = function (_ref3) {
-	  var adapter = _ref3.adapter;
-	  var code = _ref3.code;
-	
-	  if (adapter && code) {
-	
-	    if (_typeof(adapter.enableAnalytics) === CONSTANTS.objectType_function) {
-	      adapter.code = code;
-	      _analyticsRegistry[code] = adapter;
-	    } else {
-	      utils.logError('Prebid Error: Analytics adaptor error for analytics "' + code + '"\n        analytics adapter must implement an enableAnalytics() function');
-	    }
-	  } else {
-	    utils.logError('Prebid Error: analyticsAdapter or analyticsCode not specified');
-	  }
-	};
-	
-	exports.enableAnalytics = function (config) {
-	  if (!utils.isArray(config)) {
-	    config = [config];
-	  }
-	
-	  utils._each(config, function (adapterConfig) {
-	    var adapter = _analyticsRegistry[adapterConfig.provider];
-	    if (adapter) {
-	      adapter.enableAnalytics(adapterConfig);
-	    } else {
-	      utils.logError('Prebid Error: no analytics adapter found in registry for\n        ' + adapterConfig.provider + '.');
-	    }
-	  });
-	};
-	
-	var AdequantAdapter = __webpack_require__(8);
-	exports.registerBidAdapter(new AdequantAdapter(), 'adequant');
-	var AolAdapter = __webpack_require__(11);
-	exports.registerBidAdapter(new AolAdapter(), 'aol');
-	var AppnexusAdapter = __webpack_require__(12);
-	exports.registerBidAdapter(new AppnexusAdapter.createNew(), 'appnexus');
-	var SekindoAdapter = __webpack_require__(14);
-	exports.registerBidAdapter(new SekindoAdapter(), 'sekindo');
-	var PulsepointAdapter = __webpack_require__(15);
-	exports.registerBidAdapter(new PulsepointAdapter(), 'pulsepoint');
-	var SpringserveAdapter = __webpack_require__(16);
-	exports.registerBidAdapter(new SpringserveAdapter(), 'springserve');
-	exports.aliasBidAdapter('appnexus', 'brealtime');
-	
-	var ga = __webpack_require__(17).default || __webpack_require__(17);
-	exports.registerAnalyticsAdapter({ adapter: ga, code: 'ga' });
-
-/***/ },
-/* 7 */
-/***/ function(module, exports) {
-
-	'use strict';
-	
-	Object.defineProperty(exports, "__esModule", {
-	  value: true
-	});
-	
-	var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-	
-	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-	
-	var BaseAdapter = exports.BaseAdapter = function () {
-	  function BaseAdapter(code) {
-	    _classCallCheck(this, BaseAdapter);
-	
-	    this.code = code;
-	  }
-	
-	  _createClass(BaseAdapter, [{
-	    key: 'getCode',
-	    value: function getCode() {
-	      return this.code;
-	    }
-	  }, {
-	    key: 'setCode',
-	    value: function setCode(code) {
-	      this.code = code;
-	    }
-	  }, {
-	    key: 'callBids',
-	    value: function callBids() {
-	      throw 'adapter implementation must override callBids method';
-	    }
-	  }]);
-
-	  return BaseAdapter;
-	}();
-
-/***/ },
-/* 8 */
-/***/ function(module, exports, __webpack_require__) {
-
-	'use strict';
-	
-	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
-	
-	var bidfactory = __webpack_require__(9);
-	var bidmanager = __webpack_require__(4);
-	var adloader = __webpack_require__(10);
-	var utils = __webpack_require__(1);
-	var CONSTANTS = __webpack_require__(2);
+	var bidfactory = __webpack_require__(10);
+	var bidmanager = __webpack_require__(11);
+	var adloader = __webpack_require__(13);
+	var utils = __webpack_require__(2);
+	var CONSTANTS = __webpack_require__(3);
 	
 	module.exports = function () {
 	  var req_url_base = 'https://rex.adequant.com/rex/c2s_prebid?';
@@ -2403,12 +2214,12 @@
 	};
 
 /***/ },
-/* 9 */
+/* 10 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var utils = __webpack_require__(1);
+	var utils = __webpack_require__(2);
 	
 	/**
 	 Required paramaters
@@ -2463,12 +2274,556 @@
 	};
 
 /***/ },
-/* 10 */
+/* 11 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var utils = __webpack_require__(1);
+	var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
+	
+	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+	
+	var _utils = __webpack_require__(2);
+	
+	var _cpmBucketManager = __webpack_require__(12);
+	
+	var CONSTANTS = __webpack_require__(3);
+	var utils = __webpack_require__(2);
+	var events = __webpack_require__(8);
+	
+	var objectType_function = 'function';
+	
+	var externalCallbacks = { byAdUnit: [], all: [], oneTime: null, timer: false };
+	var _granularity = CONSTANTS.GRANULARITY_OPTIONS.MEDIUM;
+	var _customPriceBucket = void 0;
+	var defaultBidderSettingsMap = {};
+	
+	exports.setCustomPriceBucket = function (customConfig) {
+	  _customPriceBucket = customConfig;
+	};
+	
+	/**
+	 * Returns a list of bidders that we haven't received a response yet
+	 * @return {array} [description]
+	 */
+	exports.getTimedOutBidders = function () {
+	  return pbjs._bidsRequested.map(getBidderCode).filter(_utils.uniques).filter(function (bidder) {
+	    return pbjs._bidsReceived.map(getBidders).filter(_utils.uniques).indexOf(bidder) < 0;
+	  });
+	};
+	
+	function timestamp() {
+	  return new Date().getTime();
+	}
+	
+	function getBidderCode(bidSet) {
+	  return bidSet.bidderCode;
+	}
+	
+	function getBidders(bid) {
+	  return bid.bidder;
+	}
+	
+	function bidsBackAdUnit(adUnitCode) {
+	  var requested = pbjs._bidsRequested.map(function (request) {
+	    return request.bids.filter(function (bid) {
+	      return bid.placementCode === adUnitCode;
+	    });
+	  }).reduce(_utils.flatten).map(function (bid) {
+	    return bid.bidder === 'indexExchange' ? bid.sizes.length : 1;
+	  }).reduce(add, 0);
+	
+	  var received = pbjs._bidsReceived.filter(function (bid) {
+	    return bid.adUnitCode === adUnitCode;
+	  }).length;
+	  return requested === received;
+	}
+	
+	function add(a, b) {
+	  return a + b;
+	}
+	
+	function bidsBackAll() {
+	  var requested = pbjs._bidsRequested.map(function (request) {
+	    return request.bids;
+	  }).reduce(_utils.flatten).map(function (bid) {
+	    return bid.bidder === 'indexExchange' ? bid.sizes.length : 1;
+	  }).reduce(add, 0);
+	
+	  var received = pbjs._bidsReceived.length;
+	  return requested === received;
+	}
+	
+	exports.bidsBackAll = function () {
+	  return bidsBackAll();
+	};
+	
+	function getBidSet(bidder, adUnitCode) {
+	  return pbjs._bidsRequested.find(function (bidSet) {
+	    return bidSet.bids.filter(function (bid) {
+	      return bid.bidder === bidder && bid.placementCode === adUnitCode;
+	    }).length > 0;
+	  }) || { start: null, requestId: null };
+	}
+	
+	/*
+	 *   This function should be called to by the bidder adapter to register a bid response
+	 */
+	exports.addBidResponse = function (adUnitCode, bid) {
+	  if (bid) {
+	    var _getBidSet = getBidSet(bid.bidderCode, adUnitCode),
+	        requestId = _getBidSet.requestId,
+	        start = _getBidSet.start;
+	
+	    _extends(bid, {
+	      requestId: requestId,
+	      responseTimestamp: timestamp(),
+	      requestTimestamp: start,
+	      cpm: bid.cpm || 0,
+	      bidder: bid.bidderCode,
+	      adUnitCode: adUnitCode
+	    });
+	
+	    bid.timeToRespond = bid.responseTimestamp - bid.requestTimestamp;
+	
+	    if (bid.timeToRespond > pbjs.cbTimeout + pbjs.timeoutBuffer) {
+	      var timedOut = true;
+	
+	      exports.executeCallback(timedOut);
+	    }
+	
+	    //emit the bidAdjustment event before bidResponse, so bid response has the adjusted bid value
+	    events.emit(CONSTANTS.EVENTS.BID_ADJUSTMENT, bid);
+	
+	    //emit the bidResponse event
+	    events.emit(CONSTANTS.EVENTS.BID_RESPONSE, bid);
+	
+	    //append price strings
+	    var priceStringsObj = (0, _cpmBucketManager.getPriceBucketString)(bid.cpm, _customPriceBucket);
+	    bid.pbLg = priceStringsObj.low;
+	    bid.pbMg = priceStringsObj.med;
+	    bid.pbHg = priceStringsObj.high;
+	    bid.pbAg = priceStringsObj.auto;
+	    bid.pbDg = priceStringsObj.dense;
+	    bid.pbCg = priceStringsObj.custom;
+	
+	    //if there is any key value pairs to map do here
+	    var keyValues = {};
+	    if (bid.bidderCode && bid.cpm !== 0) {
+	      keyValues = getKeyValueTargetingPairs(bid.bidderCode, bid);
+	
+	      if (bid.dealId) {
+	        keyValues['hb_deal_' + bid.bidderCode] = bid.dealId;
+	      }
+	
+	      bid.adserverTargeting = keyValues;
+	    }
+	
+	    pbjs._bidsReceived.push(bid);
+	  }
+	
+	  if (bid && bid.adUnitCode && bidsBackAdUnit(bid.adUnitCode)) {
+	    triggerAdUnitCallbacks(bid.adUnitCode);
+	  }
+	
+	  if (bidsBackAll()) {
+	    exports.executeCallback();
+	  }
+	};
+	
+	function getKeyValueTargetingPairs(bidderCode, custBidObj) {
+	  var keyValues = {};
+	  var bidder_settings = pbjs.bidderSettings;
+	
+	  //1) set the keys from "standard" setting or from prebid defaults
+	  if (custBidObj && bidder_settings) {
+	    //initialize default if not set
+	    var standardSettings = getStandardBidderSettings();
+	    setKeys(keyValues, standardSettings, custBidObj);
+	  }
+	
+	  //2) set keys from specific bidder setting override if they exist
+	  if (bidderCode && custBidObj && bidder_settings && bidder_settings[bidderCode] && bidder_settings[bidderCode][CONSTANTS.JSON_MAPPING.ADSERVER_TARGETING]) {
+	    setKeys(keyValues, bidder_settings[bidderCode], custBidObj);
+	    custBidObj.alwaysUseBid = bidder_settings[bidderCode].alwaysUseBid;
+	    filterIfSendStandardTargeting(bidder_settings[bidderCode]);
+	  }
+	
+	  //2) set keys from standard setting. NOTE: this API doesn't seem to be in use by any Adapter
+	  else if (defaultBidderSettingsMap[bidderCode]) {
+	      setKeys(keyValues, defaultBidderSettingsMap[bidderCode], custBidObj);
+	      custBidObj.alwaysUseBid = defaultBidderSettingsMap[bidderCode].alwaysUseBid;
+	      filterIfSendStandardTargeting(defaultBidderSettingsMap[bidderCode]);
+	    }
+	
+	  function filterIfSendStandardTargeting(bidderSettings) {
+	    if (typeof bidderSettings.sendStandardTargeting !== "undefined" && bidderSettings.sendStandardTargeting === false) {
+	      for (var key in keyValues) {
+	        if (CONSTANTS.TARGETING_KEYS.indexOf(key) !== -1) {
+	          delete keyValues[key];
+	        }
+	      }
+	    }
+	  }
+	
+	  return keyValues;
+	}
+	
+	exports.getKeyValueTargetingPairs = function () {
+	  return getKeyValueTargetingPairs.apply(undefined, arguments);
+	};
+	
+	function setKeys(keyValues, bidderSettings, custBidObj) {
+	  var targeting = bidderSettings[CONSTANTS.JSON_MAPPING.ADSERVER_TARGETING];
+	  custBidObj.size = custBidObj.getSize();
+	
+	  utils._each(targeting, function (kvPair) {
+	    var key = kvPair.key;
+	    var value = kvPair.val;
+	
+	    if (keyValues[key]) {
+	      utils.logWarn('The key: ' + key + ' is getting ovewritten');
+	    }
+	
+	    if (utils.isFn(value)) {
+	      try {
+	        value = value(custBidObj);
+	      } catch (e) {
+	        utils.logError('bidmanager', 'ERROR', e);
+	      }
+	    }
+	
+	    if (typeof bidderSettings.suppressEmptyKeys !== "undefined" && bidderSettings.suppressEmptyKeys === true && (utils.isEmptyStr(value) || value === null || value === undefined)) {
+	      utils.logInfo("suppressing empty key '" + key + "' from adserver targeting");
+	    } else {
+	      keyValues[key] = value;
+	    }
+	  });
+	
+	  return keyValues;
+	}
+	
+	exports.setPriceGranularity = function setPriceGranularity(granularity) {
+	  var granularityOptions = CONSTANTS.GRANULARITY_OPTIONS;
+	  if (Object.keys(granularityOptions).filter(function (option) {
+	    return granularity === granularityOptions[option];
+	  })) {
+	    _granularity = granularity;
+	  } else {
+	    utils.logWarn('Prebid Warning: setPriceGranularity was called with invalid setting, using' + ' `medium` as default.');
+	    _granularity = CONSTANTS.GRANULARITY_OPTIONS.MEDIUM;
+	  }
+	};
+	
+	exports.registerDefaultBidderSetting = function (bidderCode, defaultSetting) {
+	  defaultBidderSettingsMap[bidderCode] = defaultSetting;
+	};
+	
+	exports.executeCallback = function (timedOut) {
+	  // if there's still a timeout running, clear it now
+	  if (!timedOut && externalCallbacks.timer) {
+	    clearTimeout(externalCallbacks.timer);
+	  }
+	
+	  if (externalCallbacks.all.called !== true) {
+	    processCallbacks(externalCallbacks.all);
+	    externalCallbacks.all.called = true;
+	
+	    if (timedOut) {
+	      var timedOutBidders = exports.getTimedOutBidders();
+	
+	      if (timedOutBidders.length) {
+	        events.emit(CONSTANTS.EVENTS.BID_TIMEOUT, timedOutBidders);
+	      }
+	    }
+	  }
+	
+	  //execute one time callback
+	  if (externalCallbacks.oneTime) {
+	    try {
+	      processCallbacks([externalCallbacks.oneTime]);
+	    } finally {
+	      externalCallbacks.oneTime = null;
+	      externalCallbacks.timer = false;
+	      pbjs.clearAuction();
+	    }
+	  }
+	};
+	
+	function triggerAdUnitCallbacks(adUnitCode) {
+	  //todo : get bid responses and send in args
+	  var params = [adUnitCode];
+	  processCallbacks(externalCallbacks.byAdUnit, params);
+	}
+	
+	function processCallbacks(callbackQueue, params) {
+	  var i;
+	  if (utils.isArray(callbackQueue)) {
+	    for (i = 0; i < callbackQueue.length; i++) {
+	      var func = callbackQueue[i];
+	      func.apply(pbjs, params || [pbjs._bidsReceived.reduce(groupByPlacement, {})]);
+	    }
+	  }
+	}
+	
+	/**
+	 * groupByPlacement is a reduce function that converts an array of Bid objects
+	 * to an object with placement codes as keys, with each key representing an object
+	 * with an array of `Bid` objects for that placement
+	 * @param prev previous value as accumulator object
+	 * @param item current array item
+	 * @param idx current index
+	 * @param arr the array being reduced
+	 * @returns {*} as { [adUnitCode]: { bids: [Bid, Bid, Bid] } }
+	 */
+	function groupByPlacement(prev, item, idx, arr) {
+	  // this uses a standard "array to map" operation that could be abstracted further
+	  if (item.adUnitCode in Object.keys(prev)) {
+	    // if the adUnitCode key is present in the accumulator object, continue
+	    return prev;
+	  } else {
+	    // otherwise add the adUnitCode key to the accumulator object and set to an object with an
+	    // array of Bids for that adUnitCode
+	    prev[item.adUnitCode] = {
+	      bids: arr.filter(function (bid) {
+	        return bid.adUnitCode === item.adUnitCode;
+	      })
+	    };
+	    return prev;
+	  }
+	}
+	
+	/**
+	 * Add a one time callback, that is discarded after it is called
+	 * @param {Function} callback
+	 * @param timer Timer to clear if callback is triggered before timer time's out
+	 */
+	exports.addOneTimeCallback = function (callback, timer) {
+	  externalCallbacks.oneTime = callback;
+	  externalCallbacks.timer = timer;
+	};
+	
+	exports.addCallback = function (id, callback, cbEvent) {
+	  callback.id = id;
+	  if (CONSTANTS.CB.TYPE.ALL_BIDS_BACK === cbEvent) {
+	    externalCallbacks.all.push(callback);
+	  } else if (CONSTANTS.CB.TYPE.AD_UNIT_BIDS_BACK === cbEvent) {
+	    externalCallbacks.byAdUnit.push(callback);
+	  }
+	};
+	
+	//register event for bid adjustment
+	events.on(CONSTANTS.EVENTS.BID_ADJUSTMENT, function (bid) {
+	  adjustBids(bid);
+	});
+	
+	function adjustBids(bid) {
+	  var code = bid.bidderCode;
+	  var bidPriceAdjusted = bid.cpm;
+	  if (code && pbjs.bidderSettings && pbjs.bidderSettings[code]) {
+	    if (_typeof(pbjs.bidderSettings[code].bidCpmAdjustment) === objectType_function) {
+	      try {
+	        bidPriceAdjusted = pbjs.bidderSettings[code].bidCpmAdjustment.call(null, bid.cpm, utils.extend({}, bid));
+	      } catch (e) {
+	        utils.logError('Error during bid adjustment', 'bidmanager.js', e);
+	      }
+	    }
+	  }
+	
+	  if (bidPriceAdjusted >= 0) {
+	    bid.cpm = bidPriceAdjusted;
+	  }
+	}
+	
+	exports.adjustBids = function () {
+	  return adjustBids.apply(undefined, arguments);
+	};
+	
+	function getStandardBidderSettings() {
+	  var bidder_settings = pbjs.bidderSettings;
+	  if (!bidder_settings[CONSTANTS.JSON_MAPPING.BD_SETTING_STANDARD]) {
+	    bidder_settings[CONSTANTS.JSON_MAPPING.BD_SETTING_STANDARD] = {
+	      adserverTargeting: [{
+	        key: 'hb_bidder',
+	        val: function val(bidResponse) {
+	          return bidResponse.bidderCode;
+	        }
+	      }, {
+	        key: 'hb_adid',
+	        val: function val(bidResponse) {
+	          return bidResponse.adId;
+	        }
+	      }, {
+	        key: 'hb_pb',
+	        val: function val(bidResponse) {
+	          if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.AUTO) {
+	            return bidResponse.pbAg;
+	          } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.DENSE) {
+	            return bidResponse.pbDg;
+	          } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.LOW) {
+	            return bidResponse.pbLg;
+	          } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.MEDIUM) {
+	            return bidResponse.pbMg;
+	          } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.HIGH) {
+	            return bidResponse.pbHg;
+	          } else if (_granularity === CONSTANTS.GRANULARITY_OPTIONS.CUSTOM) {
+	            return bidResponse.pbCg;
+	          }
+	        }
+	      }, {
+	        key: 'hb_size',
+	        val: function val(bidResponse) {
+	          return bidResponse.size;
+	        }
+	      }]
+	    };
+	  }
+	  return bidder_settings[CONSTANTS.JSON_MAPPING.BD_SETTING_STANDARD];
+	}
+	
+	function getStandardBidderAdServerTargeting() {
+	  return getStandardBidderSettings()[CONSTANTS.JSON_MAPPING.ADSERVER_TARGETING];
+	}
+	
+	exports.getStandardBidderAdServerTargeting = getStandardBidderAdServerTargeting;
+
+/***/ },
+/* 12 */
+/***/ function(module, exports) {
+
+	'use strict';
+	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	var _defaultPrecision = 2;
+	var _lgPriceConfig = {
+	  'buckets': [{
+	    'min': 0,
+	    'max': 5,
+	    'increment': 0.5
+	  }]
+	};
+	var _mgPriceConfig = {
+	  'buckets': [{
+	    'min': 0,
+	    'max': 20,
+	    'increment': 0.1
+	  }]
+	};
+	var _hgPriceConfig = {
+	  'buckets': [{
+	    'min': 0,
+	    'max': 20,
+	    'increment': 0.01
+	  }]
+	};
+	var _densePriceConfig = {
+	  'buckets': [{
+	    'min': 0,
+	    'max': 3,
+	    'increment': 0.01
+	  }, {
+	    'min': 3,
+	    'max': 8,
+	    'increment': 0.05
+	  }, {
+	    'min': 8,
+	    'max': 20,
+	    'increment': 0.5
+	  }]
+	};
+	var _autoPriceConfig = {
+	  'buckets': [{
+	    'min': 0,
+	    'max': 5,
+	    'increment': 0.05
+	  }, {
+	    'min': 5,
+	    'max': 10,
+	    'increment': 0.1
+	  }, {
+	    'min': 10,
+	    'max': 20,
+	    'increment': 0.5
+	  }]
+	};
+	
+	function getPriceBucketString(cpm, customConfig) {
+	  var cpmFloat = 0;
+	  cpmFloat = parseFloat(cpm);
+	  if (isNaN(cpmFloat)) {
+	    cpmFloat = '';
+	  }
+	
+	  return {
+	    low: cpmFloat === '' ? '' : getCpmStringValue(cpm, _lgPriceConfig),
+	    med: cpmFloat === '' ? '' : getCpmStringValue(cpm, _mgPriceConfig),
+	    high: cpmFloat === '' ? '' : getCpmStringValue(cpm, _hgPriceConfig),
+	    auto: cpmFloat === '' ? '' : getCpmStringValue(cpm, _autoPriceConfig),
+	    dense: cpmFloat === '' ? '' : getCpmStringValue(cpm, _densePriceConfig),
+	    custom: cpmFloat === '' ? '' : getCpmStringValue(cpm, customConfig)
+	  };
+	}
+	
+	function getCpmStringValue(cpm, config) {
+	  var cpmStr = '';
+	  if (!isValidePriceConfig(config)) {
+	    return cpmStr;
+	  }
+	  var cap = config.buckets.reduce(function (prev, curr) {
+	    if (prev.max > curr.max) {
+	      return prev;
+	    }
+	    return curr;
+	  }, {
+	    'max': 0
+	  });
+	  var bucket = config.buckets.find(function (bucket) {
+	    if (cpm > cap.max) {
+	      var precision = bucket.precision || _defaultPrecision;
+	      cpmStr = bucket.max.toFixed(precision);
+	    } else if (cpm <= bucket.max && cpm >= bucket.min) {
+	      return bucket;
+	    }
+	  });
+	  if (bucket) {
+	    cpmStr = getCpmTarget(cpm, bucket.increment, bucket.precision);
+	  }
+	  return cpmStr;
+	}
+	
+	function isValidePriceConfig(config) {
+	  if (!config || !config.buckets || !Array.isArray(config.buckets)) {
+	    return false;
+	  }
+	  var isValid = true;
+	  config.buckets.forEach(function (bucket) {
+	    if (typeof bucket.min === 'undefined' || !bucket.max || !bucket.increment) {
+	      isValid = false;
+	    }
+	  });
+	  return isValid;
+	}
+	
+	function getCpmTarget(cpm, increment, precision) {
+	  if (!precision) {
+	    precision = _defaultPrecision;
+	  }
+	  var bucketSize = 1 / increment;
+	  return (Math.floor(cpm * bucketSize) / bucketSize).toFixed(precision);
+	}
+	
+	exports.getPriceBucketString = getPriceBucketString;
+	exports.isValidePriceConfig = isValidePriceConfig;
+
+/***/ },
+/* 13 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
+	var utils = __webpack_require__(2);
 	var _requestCache = {};
 	
 	//add a script tag to the page, used to add /jpt call to page
@@ -2573,189 +2928,167 @@
 	};
 
 /***/ },
-/* 11 */
+/* 14 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var utils = __webpack_require__(1);
-	var bidfactory = __webpack_require__(9);
-	var bidmanager = __webpack_require__(4);
-	var adloader = __webpack_require__(10);
+	var _templateObject = _taggedTemplateLiteral(['', '://', '/pubapi/3.0/', '/', '/', '/', '/ADTECH;v=2;cmd=bid;cors=yes;alias=', '', ';misc=', ''], ['', '://', '/pubapi/3.0/', '/', '/', '/', '/ADTECH;v=2;cmd=bid;cors=yes;alias=', '', ';misc=', '']);
+	
+	function _taggedTemplateLiteral(strings, raw) { return Object.freeze(Object.defineProperties(strings, { raw: { value: Object.freeze(raw) } })); }
+	
+	var utils = __webpack_require__(2);
+	var ajax = __webpack_require__(15).ajax;
+	var bidfactory = __webpack_require__(10);
+	var bidmanager = __webpack_require__(11);
 	
 	var AolAdapter = function AolAdapter() {
 	
-	  // constants
-	  var ADTECH_URI = 'https://secure-ads.pictela.net/rm/marketplace/pubtaglib/0_4_0/pubtaglib_0_4_0.js';
-	  var ADTECH_BIDDER_NAME = 'aol';
-	  var ADTECH_PUBAPI_CONFIG = {
-	    pixelsDivId: 'pixelsDiv',
-	    defaultKey: 'aolBid',
-	    roundingConfig: [{
-	      from: 0,
-	      to: 999,
-	      roundFunction: 'tenCentsRound'
-	    }, {
-	      from: 1000,
-	      to: -1,
-	      roundValue: 1000
-	    }],
-	    pubApiOK: _addBid,
-	    pubApiER: _addErrorBid
+	  var showCpmAdjustmentWarning = true;
+	  var pubapiTemplate = template(_templateObject, 'protocol', 'host', 'network', 'placement', 'pageid', 'sizeid', 'alias', 'bidfloor', 'misc');
+	  var BIDDER_CODE = 'aol';
+	  var SERVER_MAP = {
+	    us: 'adserver-us.adtech.advertising.com',
+	    eu: 'adserver-eu.adtech.advertising.com',
+	    as: 'adserver-as.adtech.advertising.com'
 	  };
 	
-	  var bids;
-	  var bidsMap = {};
-	  var d = window.document;
-	  var h = d.getElementsByTagName('HEAD')[0];
-	  var dummyUnitIdCount = 0;
-	
-	  /**
-	   * @private create a div that we'll use as the
-	   * location for the AOL unit; AOL will document.write
-	   * if the div is not present in the document.
-	   * @param {String} id to identify the div
-	   * @return {String} the id used with the div
-	   */
-	  function _dummyUnit(id) {
-	    var div = d.createElement('DIV');
-	
-	    if (!id || !id.length) {
-	      id = 'ad-placeholder-' + ++dummyUnitIdCount;
+	  function template(strings) {
+	    for (var _len = arguments.length, keys = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+	      keys[_key - 1] = arguments[_key];
 	    }
 	
-	    div.id = id + '-head-unit';
-	    h.appendChild(div);
-	    return div.id;
-	  }
+	    return function () {
+	      for (var _len2 = arguments.length, values = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+	        values[_key2] = arguments[_key2];
+	      }
 	
-	  /**
-	   * @private Add a succesful bid response for aol
-	   * @param {ADTECHResponse} response the response for the bid
-	   * @param {ADTECHContext} context the context passed from aol
-	   */
-	  function _addBid(response, context) {
-	    var bid = bidsMap[context.alias];
-	    var cpm;
-	
-	    if (!bid) {
-	      utils.logError('mismatched bid: ' + context.placement, ADTECH_BIDDER_NAME, context);
-	      return;
-	    }
-	
-	    cpm = response.getCPM();
-	    if (cpm === null || isNaN(cpm)) {
-	      return _addErrorBid(response, context);
-	    }
-	
-	    // clean up--we no longer need to store the bid
-	    delete bidsMap[context.alias];
-	
-	    var bidResponse = bidfactory.createBid(1);
-	    var ad = response.getCreative();
-	    if (typeof response.getPixels() !== 'undefined') {
-	      ad += response.getPixels();
-	    }
-	    bidResponse.bidderCode = ADTECH_BIDDER_NAME;
-	    bidResponse.ad = ad;
-	    bidResponse.cpm = cpm;
-	    bidResponse.width = response.getAdWidth();
-	    bidResponse.height = response.getAdHeight();
-	    bidResponse.creativeId = response.getCreativeId();
-	
-	    // add it to the bid manager
-	    bidmanager.addBidResponse(bid.placementCode, bidResponse);
-	  }
-	
-	  /**
-	   * @private Add an error bid response for aol
-	   * @param {ADTECHResponse} response the response for the bid
-	   * @param {ADTECHContext} context the context passed from aol
-	   */
-	  function _addErrorBid(response, context) {
-	    var bid = bidsMap[context.alias];
-	
-	    if (!bid) {
-	      utils.logError('mismatched bid: ' + context.placement, ADTECH_BIDDER_NAME, context);
-	      return;
-	    }
-	
-	    // clean up--we no longer need to store the bid
-	    delete bidsMap[context.alias];
-	
-	    var bidResponse = bidfactory.createBid(2);
-	    bidResponse.bidderCode = ADTECH_BIDDER_NAME;
-	    bidResponse.reason = response.getNbr();
-	    bidResponse.raw = response.getResponse();
-	    bidmanager.addBidResponse(bid.placementCode, bidResponse);
-	  }
-	
-	  /**
-	   * @private map a prebid bidrequest to an ADTECH/aol bid request
-	   * @param {Bid} bid the bid request
-	   * @return {Object} the bid request, formatted for the ADTECH/DAC api
-	   */
-	  function _mapUnit(bid) {
-	    var alias = bid.params.alias || utils.getUniqueIdentifierStr();
-	
-	    // save the bid
-	    bidsMap[alias] = bid;
-	
-	    return {
-	      adContainerId: _dummyUnit(bid.params.adContainerId),
-	      server: bid.params.server, // By default, DAC.js will use the US region endpoint (adserver.adtechus.com)
-	      sizeid: bid.params.sizeId || 0,
-	      pageid: bid.params.pageId,
-	      secure: document.location.protocol === 'https:',
-	      serviceType: 'pubapi',
-	      performScreenDetection: false,
-	      alias: alias,
-	      network: bid.params.network,
-	      placement: parseInt(bid.params.placement),
-	      gpt: {
-	        adUnitPath: bid.params.adUnitPath || bid.placementCode,
-	        size: bid.params.size || (bid.sizes || [])[0]
-	      },
-	      params: {
-	        cors: 'yes',
-	        cmd: 'bid',
-	        bidfloor: typeof bid.params.bidFloor !== "undefined" ? bid.params.bidFloor.toString() : ''
-	      },
-	      pubApiConfig: ADTECH_PUBAPI_CONFIG,
-	      placementCode: bid.placementCode
+	      var dict = values[values.length - 1] || {};
+	      var result = [strings[0]];
+	      keys.forEach(function (key, i) {
+	        var value = Number.isInteger(key) ? values[key] : dict[key];
+	        result.push(value, strings[i + 1]);
+	      });
+	      return result.join('');
 	    };
 	  }
 	
-	  /**
-	   * @private once ADTECH is loaded, request bids by
-	   * calling ADTECH.loadAd
-	   */
-	  function _reqBids() {
-	    if (!window.ADTECH) {
-	      utils.logError('window.ADTECH is not present!', ADTECH_BIDDER_NAME);
-	      return;
+	  function _buildPubapiUrl(bid) {
+	    var params = bid.params;
+	    var serverParam = params.server;
+	    var regionParam = params.region || 'us';
+	    var server = void 0;
+	
+	    if (!SERVER_MAP.hasOwnProperty(regionParam)) {
+	      console.warn('Unknown region \'' + regionParam + '\' for AOL bidder.');
+	      regionParam = 'us'; // Default region.
 	    }
 	
-	    // get the bids
-	    utils._each(bids, function (bid) {
-	      var bidreq = _mapUnit(bid);
-	      window.ADTECH.loadAd(bidreq);
+	    if (serverParam) {
+	      server = serverParam;
+	    } else {
+	      server = SERVER_MAP[regionParam];
+	    }
+	
+	    // Set region param, used by AOL analytics.
+	    params.region = regionParam;
+	
+	    return pubapiTemplate({
+	      protocol: document.location.protocol === 'https:' ? 'https' : 'http',
+	      host: server,
+	      network: params.network,
+	      placement: parseInt(params.placement),
+	      pageid: params.pageId || 0,
+	      sizeid: params.sizeId || 0,
+	      alias: params.alias || utils.getUniqueIdentifierStr(),
+	      bidfloor: typeof params.bidFloor !== 'undefined' ? ';bidfloor=' + params.bidFloor.toString() : '',
+	      misc: new Date().getTime() // cache busting
 	    });
 	  }
 	
-	  /**
-	   * @public call the bids
-	   * this requests the specified bids
-	   * from aol marketplace
-	   * @param {Object} params
-	   * @param {Array} params.bids the bids to be requested
-	   */
+	  function _addErrorBidResponse(bid) {
+	    var response = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+	
+	    var bidResponse = bidfactory.createBid(2, bid);
+	    bidResponse.bidderCode = BIDDER_CODE;
+	    bidResponse.reason = response.nbr;
+	    bidResponse.raw = response;
+	    bidmanager.addBidResponse(bid.placementCode, bidResponse);
+	  }
+	
+	  function _addBidResponse(bid, response) {
+	    var bidData = void 0;
+	
+	    try {
+	      bidData = response.seatbid[0].bid[0];
+	    } catch (e) {
+	      _addErrorBidResponse(bid, response);
+	      return;
+	    }
+	
+	    var cpm = void 0;
+	
+	    if (bidData.ext && bidData.ext.encp) {
+	      cpm = bidData.ext.encp;
+	    } else {
+	      cpm = bidData.price;
+	
+	      if (cpm === null || isNaN(cpm)) {
+	        utils.logError('Invalid price in bid response', BIDDER_CODE, bid);
+	        _addErrorBidResponse(bid, response);
+	        return;
+	      }
+	    }
+	
+	    var ad = bidData.adm;
+	    if (response.ext && response.ext.pixels) {
+	      ad += response.ext.pixels;
+	    }
+	
+	    var bidResponse = bidfactory.createBid(1, bid);
+	    bidResponse.bidderCode = BIDDER_CODE;
+	    bidResponse.ad = ad;
+	    bidResponse.cpm = cpm;
+	    bidResponse.width = bidData.w;
+	    bidResponse.height = bidData.h;
+	    bidResponse.creativeId = bidData.crid;
+	    bidResponse.pubapiId = response.id;
+	    bidResponse.currencyCode = response.cur;
+	    if (bidData.dealid) {
+	      bidResponse.dealId = bidData.dealid;
+	    }
+	
+	    bidmanager.addBidResponse(bid.placementCode, bidResponse);
+	  }
+	
 	  function _callBids(params) {
-	    window.bidRequestConfig = window.bidRequestConfig || {};
-	    window.dacBidRequestConfigs = window.dacBidRequestConfigs || {};
-	    bids = params.bids;
-	    if (!bids || !bids.length) return;
-	    adloader.loadScript(ADTECH_URI, _reqBids, true);
+	    utils._each(params.bids, function (bid) {
+	      var pubapiUrl = _buildPubapiUrl(bid);
+	
+	      ajax(pubapiUrl, function (response) {
+	        // needs to be here in case bidderSettings are defined after requestBids() is called
+	        if (showCpmAdjustmentWarning && pbjs.bidderSettings && pbjs.bidderSettings.aol && typeof pbjs.bidderSettings.aol.bidCpmAdjustment === 'function') {
+	          utils.logWarn('bidCpmAdjustment is active for the AOL adapter. ' + 'As of Prebid 0.14, AOL can bid in net – please contact your accounts team to enable.');
+	        }
+	        showCpmAdjustmentWarning = false; // warning is shown at most once
+	
+	        if (!response && response.length <= 0) {
+	          utils.logError('Empty bid response', BIDDER_CODE, bid);
+	          _addErrorBidResponse(bid, response);
+	          return;
+	        }
+	
+	        try {
+	          response = JSON.parse(response);
+	        } catch (e) {
+	          utils.logError('Invalid JSON in bid response', BIDDER_CODE, bid);
+	          _addErrorBidResponse(bid, response);
+	          return;
+	        }
+	
+	        _addBidResponse(bid, response);
+	      }, null, { withCredentials: true });
+	    });
 	  }
 	
 	  return {
@@ -2766,19 +3099,167 @@
 	module.exports = AolAdapter;
 
 /***/ },
-/* 12 */
+/* 15 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var _utils = __webpack_require__(1);
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
 	
-	var CONSTANTS = __webpack_require__(2);
-	var utils = __webpack_require__(1);
-	var adloader = __webpack_require__(10);
-	var bidmanager = __webpack_require__(4);
-	var bidfactory = __webpack_require__(9);
-	var Adapter = __webpack_require__(13);
+	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+	
+	exports.ajax = ajax;
+	
+	var _url = __webpack_require__(16);
+	
+	var utils = __webpack_require__(2);
+	
+	var XHR_DONE = 4;
+	
+	/**
+	 * Simple IE9+ and cross-browser ajax request function
+	 * Note: x-domain requests in IE9 do not support the use of cookies
+	 *
+	 * @param url string url
+	 * @param callback object callback
+	 * @param data mixed data
+	 * @param options object
+	 */
+	
+	function ajax(url, callback, data) {
+	  var options = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : {};
+	
+	
+	  var x = void 0,
+	      method = options.method || (data ? 'POST' : 'GET'),
+	
+	  // For IE9 support use XDomainRequest instead of XMLHttpRequest.
+	  useXDomainRequest = window.XDomainRequest && (!window.XMLHttpRequest || new window.XMLHttpRequest().responseType === undefined);
+	
+	  if (useXDomainRequest) {
+	    x = new window.XDomainRequest();
+	    x.onload = function () {
+	      callback(x.responseText, x);
+	    };
+	
+	    // http://stackoverflow.com/questions/15786966/xdomainrequest-aborts-post-on-ie-9
+	    x.onerror = function () {
+	      utils.logMessage('xhr onerror');
+	    };
+	    x.ontimeout = function () {
+	      utils.logMessage('xhr timeout');
+	    };
+	    x.onprogress = function () {
+	      utils.logMessage('xhr onprogress');
+	    };
+	  } else {
+	    x = new window.XMLHttpRequest();
+	    x.onreadystatechange = handler;
+	  }
+	
+	  if (method === 'GET' && data) {
+	    var urlInfo = (0, _url.parse)(url);
+	    _extends(urlInfo.search, data);
+	    url = (0, _url.format)(urlInfo);
+	  }
+	
+	  x.open(method, url);
+	
+	  if (!useXDomainRequest) {
+	    if (options.withCredentials) {
+	      x.withCredentials = true;
+	    }
+	    if (options.preflight) {
+	      x.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+	    }
+	    x.setRequestHeader('Content-Type', options.contentType || 'text/plain');
+	  }
+	
+	  x.send(method === 'POST' && data);
+	
+	  function handler() {
+	    if (x.readyState === XHR_DONE && callback) {
+	      callback(x.responseText, x);
+	    }
+	  }
+	}
+
+/***/ },
+/* 16 */
+/***/ function(module, exports) {
+
+	'use strict';
+	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	
+	var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
+	
+	exports.parseQS = parseQS;
+	exports.formatQS = formatQS;
+	exports.parse = parse;
+	exports.format = format;
+	function parseQS(query) {
+	  return !query ? {} : query.replace(/^\?/, '').split('&').reduce(function (acc, criteria) {
+	    var _criteria$split = criteria.split('='),
+	        _criteria$split2 = _slicedToArray(_criteria$split, 2),
+	        k = _criteria$split2[0],
+	        v = _criteria$split2[1];
+	
+	    if (/\[\]$/.test(k)) {
+	      k = k.replace('[]', '');
+	      acc[k] = acc[k] || [];
+	      acc[k].push(v);
+	    } else {
+	      acc[k] = v || '';
+	    }
+	    return acc;
+	  }, {});
+	}
+	
+	function formatQS(query) {
+	  return Object.keys(query).map(function (k) {
+	    return Array.isArray(query[k]) ? query[k].map(function (v) {
+	      return k + '[]=' + v;
+	    }).join('&') : k + '=' + query[k];
+	  }).join('&');
+	}
+	
+	function parse(url) {
+	  var parsed = document.createElement('a');
+	  parsed.href = decodeURIComponent(url);
+	  return {
+	    protocol: (parsed.protocol || '').replace(/:$/, ''),
+	    hostname: parsed.hostname,
+	    port: +parsed.port,
+	    pathname: parsed.pathname,
+	    search: parseQS(parsed.search || ''),
+	    hash: (parsed.hash || '').replace(/^#/, ''),
+	    host: parsed.host
+	  };
+	}
+	
+	function format(obj) {
+	  return (obj.protocol || 'http') + '://' + (obj.host || obj.hostname + (obj.port ? ':' + obj.port : '')) + (obj.pathname || '') + (obj.search ? '?' + formatQS(obj.search || '') : '') + (obj.hash ? '#' + obj.hash : '');
+	}
+
+/***/ },
+/* 17 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
+	var _utils = __webpack_require__(2);
+	
+	var CONSTANTS = __webpack_require__(3);
+	var utils = __webpack_require__(2);
+	var adloader = __webpack_require__(13);
+	var bidmanager = __webpack_require__(11);
+	var bidfactory = __webpack_require__(10);
+	var Adapter = __webpack_require__(18);
 	
 	var AppNexusAdapter;
 	AppNexusAdapter = function AppNexusAdapter() {
@@ -2950,7 +3431,7 @@
 	        //store bid response
 	        //bid status is good (indicating 1)
 	        var adId = jptResponseObj.result.creative_id;
-	        bid = bidfactory.createBid(1, id);
+	        bid = bidfactory.createBid(1);
 	        bid.creative_id = adId;
 	        bid.bidderCode = bidCode;
 	        bid.cpm = responseCPM;
@@ -2995,7 +3476,7 @@
 	// module.exports = AppNexusAdapter;
 
 /***/ },
-/* 13 */
+/* 18 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -3025,119 +3506,14 @@
 	};
 
 /***/ },
-/* 14 */
+/* 19 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var _utils = __webpack_require__(1);
-	
-	var CONSTANTS = __webpack_require__(2);
-	var utils = __webpack_require__(1);
-	var bidfactory = __webpack_require__(9);
-	var bidmanager = __webpack_require__(4);
-	
-	var SekindoAdapter;
-	SekindoAdapter = function SekindoAdapter() {
-	
-	  function _callBids(params) {
-	    var bids = params.bids;
-	    var bidsCount = bids.length;
-	
-	    var pubUrl = null;
-	    if (parent !== window) pubUrl = document.referrer;else pubUrl = window.location.href;
-	
-	    for (var i = 0; i < bidsCount; i++) {
-	      var bidReqeust = bids[i];
-	      var callbackId = bidReqeust.bidId;
-	      _requestBids(bidReqeust, callbackId, pubUrl);
-	      //store a reference to the bidRequest from the callback id
-	      //bidmanager.pbCallbackMap[callbackId] = bidReqeust;
-	    }
-	  }
-	
-	  pbjs.sekindoCB = function (callbackId, response) {
-	    var bidObj = (0, _utils.getBidRequest)(callbackId);
-	    if (typeof response !== 'undefined' && typeof response.cpm !== 'undefined') {
-	      var bid = [];
-	      if (bidObj) {
-	        var bidCode = bidObj.bidder;
-	        var placementCode = bidObj.placementCode;
-	
-	        if (response.cpm !== undefined && response.cpm > 0) {
-	
-	          bid = bidfactory.createBid(CONSTANTS.STATUS.GOOD, callbackId);
-	          bid.adId = response.adId;
-	          bid.callback_uid = callbackId;
-	          bid.bidderCode = bidCode;
-	          bid.creative_id = response.adId;
-	          bid.cpm = parseFloat(response.cpm);
-	          bid.ad = response.ad;
-	          bid.width = response.width;
-	          bid.height = response.height;
-	
-	          bidmanager.addBidResponse(placementCode, bid);
-	        } else {
-	          bid = bidfactory.createBid(CONSTANTS.STATUS.NO_BID, callbackId);
-	          bid.callback_uid = callbackId;
-	          bid.bidderCode = bidCode;
-	          bidmanager.addBidResponse(placementCode, bid);
-	        }
-	      }
-	    } else {
-	      if (bidObj) {
-	        utils.logMessage('No prebid response for placement ' + bidObj.placementCode);
-	      } else {
-	        utils.logMessage('sekindo callback general error');
-	      }
-	    }
-	  };
-	
-	  function _requestBids(bid, callbackId, pubUrl) {
-	    //determine tag params
-	    var spaceId = utils.getBidIdParamater('spaceId', bid.params);
-	    var bidfloor = utils.getBidIdParamater('bidfloor', bid.params);
-	    var protocol = 'https:' === document.location.protocol ? 's' : '';
-	    var scriptSrc = 'https://live.sekindo.com/live/liveView.php?';
-	
-	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 's', spaceId);
-	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'pubUrl', pubUrl);
-	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'hbcb', callbackId);
-	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'dcpmflr', bidfloor);
-	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'hbto', pbjs.bidderTimeout);
-	    scriptSrc = utils.tryAppendQueryString(scriptSrc, 'protocol', protocol);
-	
-	    var html = '<scr' + 'ipt type="text/javascript" src="' + scriptSrc + '"></scr' + 'ipt>';
-	
-	    var iframe = utils.createInvisibleIframe();
-	    iframe.id = 'skIfr_' + callbackId;
-	
-	    var elToAppend = document.getElementsByTagName('head')[0];
-	    //insert the iframe into document
-	    elToAppend.insertBefore(iframe, elToAppend.firstChild);
-	
-	    var iframeDoc = utils.getIframeDocument(iframe);
-	    iframeDoc.open();
-	    iframeDoc.write(html);
-	    iframeDoc.close();
-	  }
-	
-	  return {
-	    callBids: _callBids
-	  };
-	};
-	
-	module.exports = SekindoAdapter;
-
-/***/ },
-/* 15 */
-/***/ function(module, exports, __webpack_require__) {
-
-	'use strict';
-	
-	var bidfactory = __webpack_require__(9);
-	var bidmanager = __webpack_require__(4);
-	var adloader = __webpack_require__(10);
+	var bidfactory = __webpack_require__(10);
+	var bidmanager = __webpack_require__(11);
+	var adloader = __webpack_require__(13);
 	
 	var PulsePointAdapter = function PulsePointAdapter() {
 	
@@ -3182,7 +3558,7 @@
 	  function bidResponseAvailable(bidRequest, bidResponse) {
 	    if (bidResponse) {
 	      var adSize = bidRequest.params.cf.toUpperCase().split('X');
-	      var bid = bidfactory.createBid(1);
+	      var bid = bidfactory.createBid(1, bidRequest);
 	      bid.bidderCode = bidRequest.bidder;
 	      bid.cpm = bidResponse.bidCpm;
 	      bid.ad = bidResponse.html;
@@ -3190,7 +3566,7 @@
 	      bid.height = adSize[1];
 	      bidmanager.addBidResponse(bidRequest.placementCode, bid);
 	    } else {
-	      var passback = bidfactory.createBid(2);
+	      var passback = bidfactory.createBid(2, bidRequest);
 	      passback.bidderCode = bidRequest.bidder;
 	      bidmanager.addBidResponse(bidRequest.placementCode, passback);
 	    }
@@ -3204,65 +3580,90 @@
 	module.exports = PulsePointAdapter;
 
 /***/ },
-/* 16 */
+/* 20 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 	
-	var bidfactory = __webpack_require__(9);
-	var bidmanager = __webpack_require__(4);
-	var adloader = __webpack_require__(10);
+	var bidfactory = __webpack_require__(10);
+	var bidmanager = __webpack_require__(11);
+	var adloader = __webpack_require__(13);
 	
 	var SpringServeAdapter;
 	SpringServeAdapter = function SpringServeAdapter() {
 	
+	  function buildSpringServeCall(bid) {
+	
+	    var spCall = window.location.protocol + '//bidder.springserve.com/display/hbid?';
+	
+	    //get width and height from bid attribute
+	    var size = bid.sizes[0];
+	    var width = size[0];
+	    var height = size[1];
+	
+	    spCall += '&w=';
+	    spCall += width;
+	    spCall += '&h=';
+	    spCall += height;
+	
+	    var params = bid.params;
+	
+	    //maps param attributes to request parameters
+	    var requestAttrMap = {
+	      sp: 'supplyPartnerId',
+	      imp_id: 'impId'
+	    };
+	
+	    for (var property in requestAttrMap) {
+	      if (requestAttrMap.hasOwnProperty && params.hasOwnProperty(requestAttrMap[property])) {
+	        spCall += '&';
+	        spCall += property;
+	        spCall += '=';
+	
+	        //get property from params and include it in request
+	        spCall += params[requestAttrMap[property]];
+	      }
+	    }
+	
+	    var domain = window.location.hostname;
+	
+	    //override domain when testing
+	    if (params.hasOwnProperty('test') && params.test === true) {
+	      spCall += '&debug=true';
+	      domain = 'test.com';
+	    }
+	
+	    spCall += '&domain=';
+	    spCall += domain;
+	    spCall += '&callback=pbjs.handleSpringServeCB';
+	
+	    return spCall;
+	  }
+	
 	  function _callBids(params) {
-	
 	    var bids = params.bids || [];
-	    var paramIds, accountId, placementGroupId, tagId;
-	
-	    function getBidForTag(tagId) {
-	      var springserve = window.springserve || {};
-	      if (springserve && tagId) {
-	        springserve.getBid(parseInt(tagId), function (bid) {
-	          pbjs.handleSpringServeCB(bid);
-	        });
-	      }
+	    for (var i = 0; i < bids.length; i++) {
+	      var bid = bids[i];
+	      //bidmanager.pbCallbackMap[bid.params.impId] = params;
+	      adloader.loadScript(buildSpringServeCall(bid));
 	    }
-	
-	    function callback() {
-	      for (var i = 0; i < bids.length; i++) {
-	        var bid = bids[i];
-	        getBidForTag(bid.params.impId.split("-")[2]);
-	      }
-	    }
-	
-	    paramIds = bids[0].params.impId.split("-");
-	    tagId = paramIds[2];
-	    accountId = paramIds[0];
-	    placementGroupId = paramIds[1];
-	
-	    if (!accountId || !placementGroupId || !tagId) {
-	      return;
-	    }
-	
-	    var call = window.location.protocol;
-	    call += '//hb.springserve.com/bid/';
-	    call += accountId + '/';
-	    call += placementGroupId + '/';
-	    call += 'hbid';
-	
-	    adloader.loadScript(call, callback);
 	  }
 	
 	  pbjs.handleSpringServeCB = function (responseObj) {
 	    if (responseObj && responseObj.seatbid && responseObj.seatbid.length > 0 && responseObj.seatbid[0].bid[0] !== undefined) {
+	      //look up the request attributs stored in the bidmanager
 	      var responseBid = responseObj.seatbid[0].bid[0];
+	      //var requestObj = bidmanager.getPlacementIdByCBIdentifer(responseBid.impid);
 	      var requestBids = pbjs._bidsRequested.find(function (bidSet) {
 	        return bidSet.bidderCode === 'springserve';
-	      }).bids.filter(function (bid) {
-	        return bid.params && parseInt(bid.params.impId.split("-")[2]) === +responseBid.impid;
 	      });
+	      if (requestBids && requestBids.bids.length > 0) {
+	        requestBids = requestBids.bids.filter(function (bid) {
+	          return bid.params && bid.params.impId === +responseBid.impid;
+	        });
+	      } else {
+	        requestBids = [];
+	      }
 	      var bid = bidfactory.createBid(1);
 	      var placementCode;
 	
@@ -3271,13 +3672,15 @@
 	        var bidRequest = requestBids[i];
 	        if (bidRequest.bidder === 'springserve') {
 	          placementCode = bidRequest.placementCode;
+	          var size = bidRequest.sizes[0];
+	          bid.width = size[0];
+	          bid.height = size[1];
 	        }
 	      }
 	
-	      bid.width = responseBid.width;
-	      bid.height = responseBid.height;
-	
-	      bid.bidderCode = requestBids[0].bidder;
+	      if (requestBids[0]) {
+	        bid.bidderCode = requestBids[0].bidder;
+	      }
 	
 	      if (responseBid.hasOwnProperty('price') && responseBid.hasOwnProperty('adm')) {
 	        //assign properties from the response to the bid object
@@ -3296,14 +3699,133 @@
 	  // Export the callBids function, so that prebid.js can execute this function
 	  // when the page asks to send out bid requests.
 	  return {
-	    callBids: _callBids
+	    callBids: _callBids,
+	    buildSpringServeCall: buildSpringServeCall
 	  };
 	};
 	
 	module.exports = SpringServeAdapter;
 
 /***/ },
-/* 17 */
+/* 21 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
+	var bidfactory = __webpack_require__(10);
+	var bidmanager = __webpack_require__(11);
+	var adloader = __webpack_require__(13);
+	var utils = __webpack_require__(2);
+	
+	var SonobiAdapter = function SonobiAdapter() {
+	  var keymakerAssoc = {}; //  Remember placement codes for callback mapping
+	  var bidReqAssoc = {}; //  Remember bids for bid complete reporting
+	
+	  function _phone_in(request) {
+	    var trinity = 'https://apex.go.sonobi.com/trinity.js?key_maker=';
+	    var adSlots = request.bids || [];
+	    var bidderRequestId = request.bidderRequestId;
+	    var ref = window.frameElement ? '&ref=' + encodeURI(top.location.host || document.referrer) : '';
+	    adloader.loadScript(trinity + JSON.stringify(_keymaker(adSlots)) + '&cv=' + _operator(bidderRequestId) + ref);
+	  }
+	
+	  function _keymaker(adSlots) {
+	    var keyring = {};
+	    utils._each(adSlots, function (bidRequest) {
+	      if (bidRequest.params) {
+	        //  Optional
+	        var floor = bidRequest.params.floor ? bidRequest.params.floor : null;
+	        //  Mandatory
+	        var slotIdentifier = bidRequest.params.ad_unit ? bidRequest.params.ad_unit : bidRequest.params.placement_id ? bidRequest.params.placement_id : null;
+	        var sizes = utils.parseSizesInput(bidRequest.sizes).toString() || null;
+	        var bidId = bidRequest.bidId;
+	        if (utils.isEmpty(sizes)) {
+	          utils.logError('Sonobi adapter expects sizes for ' + bidRequest.placementCode);
+	        }
+	        var args = sizes ? floor ? sizes + '|f=' + floor : sizes : floor ? 'f=' + floor : '';
+	        if (/^[\/]?[\d]+[[\/].+[\/]?]?$/.test(slotIdentifier)) {
+	          slotIdentifier = slotIdentifier.charAt(0) === '/' ? slotIdentifier : '/' + slotIdentifier;
+	          keyring[slotIdentifier + '|' + bidId] = args;
+	          keymakerAssoc[slotIdentifier + '|' + bidId] = bidRequest.placementCode;
+	          bidReqAssoc[bidRequest.placementCode] = bidRequest;
+	        } else if (/^[0-9a-fA-F]{20}$/.test(slotIdentifier) && slotIdentifier.length === 20) {
+	          keyring[bidId] = slotIdentifier + '|' + args;
+	          keymakerAssoc[bidId] = bidRequest.placementCode;
+	          bidReqAssoc[bidRequest.placementCode] = bidRequest;
+	        } else {
+	          keymakerAssoc[bidId] = bidRequest.placementCode;
+	          bidReqAssoc[bidRequest.placementCode] = bidRequest;
+	          _failure(bidRequest.placementCode);
+	          utils.logError('The ad unit code or Sonobi Placement id for slot ' + bidRequest.placementCode + ' is invalid');
+	        }
+	      }
+	    });
+	    return keyring;
+	  }
+	
+	  function _operator(bidderRequestId) {
+	    var cb_name = "sbi_" + bidderRequestId;
+	    window[cb_name] = _trinity;
+	    return cb_name;
+	  }
+	
+	  function _trinity(response) {
+	    var slots = response.slots || {};
+	    var sbi_dc = response.sbi_dc || '';
+	    utils._each(slots, function (bid, slot_id) {
+	      var placementCode = keymakerAssoc[slot_id];
+	      if (bid.sbi_aid && bid.sbi_mouse && bid.sbi_size) {
+	        _success(placementCode, sbi_dc, bid);
+	      } else {
+	        _failure(placementCode);
+	      }
+	      delete keymakerAssoc[slot_id];
+	    });
+	  }
+	
+	  function _seraph(placementCode) {
+	    var theOne = bidReqAssoc[placementCode];
+	    delete bidReqAssoc[placementCode];
+	    return theOne;
+	  }
+	
+	  function _success(placementCode, sbi_dc, bid) {
+	    var goodBid = bidfactory.createBid(1, _seraph(placementCode));
+	    if (bid.sbi_dozer) {
+	      goodBid.dealId = bid.sbi_dozer;
+	    }
+	    goodBid.bidderCode = 'sonobi';
+	    goodBid.ad = _creative(sbi_dc, bid.sbi_aid);
+	    goodBid.cpm = Number(bid.sbi_mouse);
+	    goodBid.width = Number(bid.sbi_size.split('x')[0]) || 1;
+	    goodBid.height = Number(bid.sbi_size.split('x')[1]) || 1;
+	    bidmanager.addBidResponse(placementCode, goodBid);
+	  }
+	
+	  function _failure(placementCode) {
+	    var failBid = bidfactory.createBid(2, _seraph(placementCode));
+	    failBid.bidderCode = 'sonobi';
+	    bidmanager.addBidResponse(placementCode, failBid);
+	  }
+	
+	  function _creative(sbi_dc, sbi_aid) {
+	    var src = 'https://' + sbi_dc + 'apex.go.sonobi.com/sbi.js?aid=' + sbi_aid + '&as=null';
+	    return '<script type="text/javascript" src="' + src + '"></script>';
+	  }
+	
+	  return {
+	    callBids: _phone_in,
+	    formRequest: _keymaker,
+	    parseResponse: _trinity,
+	    success: _success,
+	    failure: _failure
+	  };
+	};
+	
+	module.exports = SonobiAdapter;
+
+/***/ },
+/* 22 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
@@ -3312,9 +3834,9 @@
 	 * ga.js - analytics adapter for google analytics
 	 */
 	
-	var events = __webpack_require__(5);
-	var utils = __webpack_require__(1);
-	var CONSTANTS = __webpack_require__(2);
+	var events = __webpack_require__(8);
+	var utils = __webpack_require__(2);
+	var CONSTANTS = __webpack_require__(3);
 	
 	var BID_REQUESTED = CONSTANTS.EVENTS.BID_REQUESTED;
 	var BID_TIMEOUT = CONSTANTS.EVENTS.BID_TIMEOUT;
@@ -3337,8 +3859,8 @@
 	 * @return {[type]}    [description]
 	 */
 	exports.enableAnalytics = function (_ref) {
-	  var provider = _ref.provider;
-	  var options = _ref.options;
+	  var provider = _ref.provider,
+	      options = _ref.options;
 	
 	
 	  _gaGlobal = provider || 'ga';
@@ -3556,6 +4078,142 @@
 	
 	  checkAnalytics();
 	}
+
+/***/ },
+/* 23 */
+/***/ function(module, exports) {
+
+	'use strict';
+	
+	/** @module polyfill
+	Misc polyfills
+	*/
+	/*jshint -W121 */
+	if (!Array.prototype.find) {
+	  Object.defineProperty(Array.prototype, "find", {
+	    value: function value(predicate) {
+	      if (this === null) {
+	        throw new TypeError('Array.prototype.find called on null or undefined');
+	      }
+	      if (typeof predicate !== 'function') {
+	        throw new TypeError('predicate must be a function');
+	      }
+	      var list = Object(this);
+	      var length = list.length >>> 0;
+	      var thisArg = arguments[1];
+	      var value;
+	
+	      for (var i = 0; i < length; i++) {
+	        value = list[i];
+	        if (predicate.call(thisArg, value, i, list)) {
+	          return value;
+	        }
+	      }
+	      return undefined;
+	    }
+	  });
+	}
+	
+	if (!Array.prototype.includes) {
+	  Object.defineProperty(Array.prototype, "includes", {
+	    value: function value(searchElement) {
+	      var O = Object(this);
+	      var len = parseInt(O.length, 10) || 0;
+	      if (len === 0) {
+	        return false;
+	      }
+	      var n = parseInt(arguments[1], 10) || 0;
+	      var k;
+	      if (n >= 0) {
+	        k = n;
+	      } else {
+	        k = len + n;
+	        if (k < 0) {
+	          k = 0;
+	        }
+	      }
+	      var currentElement;
+	      while (k < len) {
+	        currentElement = O[k];
+	        if (searchElement === currentElement || searchElement !== searchElement && currentElement !== currentElement) {
+	          // NaN !== NaN
+	          return true;
+	        }
+	        k++;
+	      }
+	      return false;
+	    }
+	  });
+	}
+	
+	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isInteger
+	Number.isInteger = Number.isInteger || function (value) {
+	  return typeof value === 'number' && isFinite(value) && Math.floor(value) === value;
+	};
+
+/***/ },
+/* 24 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	
+	var _url = __webpack_require__(16);
+	
+	//Adserver parent class
+	var AdServer = function AdServer(attr) {
+	  this.name = attr.adserver;
+	  this.code = attr.code;
+	  this.getWinningBidByCode = function () {
+	    var _this = this;
+	
+	    var bidObject = pbjs._bidsReceived.find(function (bid) {
+	      return bid.adUnitCode === _this.code;
+	    });
+	    return bidObject;
+	  };
+	};
+	
+	//DFP ad server
+	exports.dfpAdserver = function (options, urlComponents) {
+	  var adserver = new AdServer(options);
+	  adserver.urlComponents = urlComponents;
+	
+	  var dfpReqParams = {
+	    'env': 'vp',
+	    'gdfp_req': '1',
+	    'impl': 's',
+	    'unviewed_position_start': '1'
+	  };
+	
+	  var dfpParamsWithVariableValue = ['output', 'iu', 'sz', 'url', 'correlator', 'description_url', 'hl'];
+	
+	  var getCustomParams = function getCustomParams(targeting) {
+	    return encodeURIComponent((0, _url.formatQS)(targeting));
+	  };
+	
+	  adserver.appendQueryParams = function () {
+	    var bid = adserver.getWinningBidByCode();
+	    this.urlComponents.search.description_url = encodeURIComponent(bid.vastUrl);
+	    this.urlComponents.search.cust_params = getCustomParams(bid.adserverTargeting);
+	    this.urlComponents.correlator = Date.now();
+	  };
+	
+	  adserver.verifyAdserverTag = function () {
+	    for (var key in dfpReqParams) {
+	      if (!this.urlComponents.search.hasOwnProperty(key) || this.urlComponents.search[key] !== dfpReqParams[key]) {
+	        return false;
+	      }
+	    }
+	    for (var i in dfpParamsWithVariableValue) {
+	      if (!this.urlComponents.search.hasOwnProperty(dfpParamsWithVariableValue[i])) {
+	        return false;
+	      }
+	    }
+	    return true;
+	  };
+	
+	  return adserver;
+	};
 
 /***/ }
 /******/ ]);

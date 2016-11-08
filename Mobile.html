@@ -76,7 +76,7 @@
                 }, {
                     bidder: "sekindo",
                     params: {
-                        spaceId: "72671"
+                        placementId: "9901778"
                     }
                 },{
                     bidder: 'springserve',
@@ -115,7 +115,7 @@
                 }, {
                     bidder: "sekindo",
                     params: {
-                        spaceId: "72676"
+                        placementId: "9901778"
                     }
                 },{
                     bidder: 'springserve',
@@ -154,7 +154,7 @@
                 }, {
                     bidder: "sekindo",
                     params: {
-                        spaceId: "72677"
+                        placementId: "9901782"
                     }
                 },{
                     bidder: 'springserve',
@@ -193,7 +193,7 @@
                 }, {
                     bidder: "sekindo",
                     params: {
-                        spaceId: "72678"
+                        placementId: "9901785"
                     }
                 },{
                     bidder: 'springserve',
@@ -243,6 +243,11 @@
                 }
             },
             aol: {
+                bidCpmAdjustment: function(bidCpm) {
+                    return bidCpm * .80;
+                }
+            },
+            sekindo: {
                 bidCpmAdjustment: function(bidCpm) {
                     return bidCpm * .80;
                 }
