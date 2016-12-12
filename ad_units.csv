@@ -1,0 +1,12 @@
+﻿#Note: Please remove semicolon (;) from your file editor's list of delimiter or separator characters.
+#Id,Code,Name,Sizes:,Description,Enabled for AdSense,Border Colour,Title Colour,Background Colour,Text Colour,URL Colour,Placements,Target Window,Ad Type,Labels
+18313071481,MOB_320_50,MOB_320_50,300x250; 320x50,,no,,,,,,,,,
+18313164361,MOB_ATF_300_250,MOB_ATF_300_250,300x250,,no,,,,,,,,,
+18313185721,MOB_BTF_300_250,MOB_BTF_300_250,300x250,,no,,,,,,,,,
+18313185841,MOB_BTF_300_250_2,MOB_BTF_300_250_2,300x250,,no,,,,,,,,,
+18313070761,PC_728_90,PC_728_90,728x90,,no,,,,,,,,,
+18313070881,PC_ATF_300_250,PC_ATF_300_250,300x250,,no,,,,,,,,,
+18313071001,PC_ATF_300_250_2,PC_ATF_300_250_2,300x250,,no,,,,,,,,,
+18313071361,PC_ATF_300_600,PC_ATF_300_600,300x250; 300x600,,no,,,,,,,,,
+18313071121,PC_BTF_300_250,PC_BTF_300_250,300x250,,no,,,,,,,,,
+18313071241,PC_BTF_300_250_2,PC_BTF_300_250_2,300x250,,no,,,,,,,,,
