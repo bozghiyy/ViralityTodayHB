@@ -17,6 +17,20 @@ function initAdserver() {
     pbjs.initAdserverSet = true;
 };
 setTimeout(initAdserver, PREBID_TIMEOUT);
+
+function refreshSlot(slot) {
+    var codes = [];
+    for (var i = 0; i<slot.length; i++)
+        codes.push(slot[i].getSlotElementId());
+        pbjs.que.push(function() {
+         pbjs.requestBids({
+           timeout: PREBID_TIMEOUT,
+           adUnitCodes: codes,
+           bidsBackHandler: function() {
+             pbjs.setTargetingForGPTAsync(codes);
+             googletag.pubads().refresh(slot);
+    }});});}
+
 var pbjs = pbjs || {};
 pbjs.que = pbjs.que || [];
 (function() {
@@ -27,13 +41,14 @@ pbjs.que = pbjs.que || [];
     var pbjsTargetEl = document.getElementsByTagName("head")[0];
     pbjsTargetEl.insertBefore(pbjsEl, pbjsTargetEl.firstChild);
 })();
+var dfpSlots = [];
 googletag.cmd.push(function() {
-    googletag.defineSlot('/18286141601/PC_728_90', [728, 90], 'div-gpt-ad-PC_728_90').addService(googletag.pubads());
-    googletag.defineSlot('/18286141601/PC_ATF_300_250', [300, 250], 'div-gpt-ad-PC_ATF_300_250').addService(googletag.pubads());
-    googletag.defineSlot('/18286141601/PC_ATF_300_250_2', [300, 250], 'div-gpt-ad-PC_ATF_300_250_2').addService(googletag.pubads());
-    googletag.defineSlot('/18286141601/PC_BTF_300_250', [300, 250], 'div-gpt-ad-PC_BTF_300_250').addService(googletag.pubads());
-    googletag.defineSlot('/18286141601/PC_BTF_300_250_2', [300, 250], 'div-gpt-ad-PC_BTF_300_250_2').addService(googletag.pubads());
-    googletag.defineSlot('/18286141601/PC_ATF_300_600', [
+    dfpSlots[0] = googletag.defineSlot('/18286141601/PC_728_90', [728, 90], 'div-gpt-ad-PC_728_90').addService(googletag.pubads());
+    dfpSlots[1] = googletag.defineSlot('/18286141601/PC_ATF_300_250', [300, 250], 'div-gpt-ad-PC_ATF_300_250').addService(googletag.pubads());
+    dfpSlots[2] = googletag.defineSlot('/18286141601/PC_ATF_300_250_2', [300, 250], 'div-gpt-ad-PC_ATF_300_250_2').addService(googletag.pubads());
+    dfpSlots[3] = googletag.defineSlot('/18286141601/PC_BTF_300_250', [300, 250], 'div-gpt-ad-PC_BTF_300_250').addService(googletag.pubads());
+    dfpSlots[4] = googletag.defineSlot('/18286141601/PC_BTF_300_250_2', [300, 250], 'div-gpt-ad-PC_BTF_300_250_2').addService(googletag.pubads());
+    dfpSlots[5] = googletag.defineSlot('/18286141601/PC_ATF_300_600', [
         [300, 600],
         [300, 250]
     ], 'div-gpt-ad-PC_ATF_300_600').addService(googletag.pubads());
@@ -294,3 +309,6 @@ googletag.cmd.push(function() {
     googletag.pubads().enableSingleRequest();
     googletag.enableServices();
 });
+
+
+  setInterval(function(){refreshSlot(dfpSlots);}, 30000);
