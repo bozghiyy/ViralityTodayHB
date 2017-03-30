@@ -1,361 +1,331 @@
 <script type="text/javascript">
-var OX_dfp_options = {prefetch: true};
-var OX_dfp_ads = [
-   ["/18286141601/PC_728_90", ["728x90"], "div-gpt-ad-PC_728_90"],
-   ["/18286141601/PC_ATF_300_250", ["300x250"], "div-gpt-ad-PC_ATF_300_250"],
-   ["/18286141601/PC_ATF_300_250_2", ["300x250"], "div-gpt-ad-PC_ATF_300_250_2"],
-   ["/18286141601/PC_BTF_300_250", ["300x250"], "div-gpt-ad-PC_BTF_300_250"],
-   ["/18286141601/PC_BTF_300_250_2", ["300x250"], "div-gpt-ad-PC_BTF_300_250_2"],
-   ["/18286141601/PC_ATF_300_600", ["300x600","300x250"], "div-gpt-ad-PC_ATF_300_600"]
-];
-</script>
+        var OX_dfp_options = {prefetch: true};
+        var OX_dfp_ads = [
+            ["/18286141601/PC_728_90", ["728x90"], "div-gpt-ad-PC_728_90"],
+            ["/18286141601/PC_ATF_300_250", ["300x250"], "div-gpt-ad-PC_ATF_300_250"],
+            ["/18286141601/PC_ATF_300_250_2", ["300x250"], "div-gpt-ad-PC_ATF_300_250_2"],
+            ["/18286141601/PC_BTF_300_250", ["300x250"], "div-gpt-ad-PC_BTF_300_250"],
+            ["/18286141601/PC_BTF_300_250_2", ["300x250"], "div-gpt-ad-PC_BTF_300_250_2"],
+            ["/18286141601/PC_ATF_300_600", ["300x600","300x250"], "div-gpt-ad-PC_ATF_300_600"]
+        ];
+    </script>
 <script type="text/javascript" src="//skylikes-d.openx.net/w/1.0/jstag?nc=18286141601-viralitytoday"></script>
+ 
+ 
 <script>
-    var PREBID_TIMEOUT = 2000; // Time to wait before GPT is loaded
+        var PREBID_TIMEOUT = 2300; // Time to wait before GPT is loaded
 
-    var googletag = googletag || {};
-    googletag.cmd = googletag.cmd || [];
-    var adUnits = adUnits || [];
+        var googletag = googletag || {};
+        googletag.cmd = googletag.cmd || [];
+        var adUnits = adUnits || [];
 
-    function initAdserver() {
-        if (pbjs.initAdserverSet) return;
-        // Load GPT
-        (function() {
-            var gads = document.createElement('script');
-            gads.async = true;
-            gads.type = 'text/javascript';
-            var useSSL = 'https:' == document.location.protocol;
-            gads.src = (useSSL ? 'https:' : 'http:') +
+        function initAdserver() {
+            if (pbjs.initAdserverSet) return;
+            // Load GPT
+            (function() {
+                var gads = document.createElement('script');
+                gads.async = true;
+                gads.type = 'text/javascript';
+                var useSSL = 'https:' == document.location.protocol;
+                gads.src = (useSSL ? 'https:' : 'http:') +
                 '//www.googletagservices.com/tag/js/gpt.js';
-            var node = document.getElementsByTagName('script')[0];
-            node.parentNode.insertBefore(gads, node);
+                var node = document.getElementsByTagName('script')[0];
+                node.parentNode.insertBefore(gads, node);
+            })();
+            pbjs.initAdserverSet = true;
+        };
+        setTimeout(initAdserver, PREBID_TIMEOUT);
+
+        // Load Prebid
+        var pbjs = pbjs || {};
+        pbjs.que = pbjs.que || [];
+        (function() {
+            var pbjsEl = document.createElement("script");
+            pbjsEl.type = "text/javascript";
+            pbjsEl.async = true;
+            pbjsEl.src = "http://www.viralitytoday.com/prebid.min.js"; // REPLACE WITH LOCATION OF prebid
+            var pbjsTargetEl = document.getElementsByTagName("head")[0];
+            pbjsTargetEl.insertBefore(pbjsEl, pbjsTargetEl.firstChild);
         })();
-        pbjs.initAdserverSet = true;
-    };
-    setTimeout(initAdserver, PREBID_TIMEOUT);
-
-    // Load Prebid
-    var pbjs = pbjs || {};
-    pbjs.que = pbjs.que || [];
-    (function() {
-        var pbjsEl = document.createElement("script");
-        pbjsEl.type = "text/javascript";
-        pbjsEl.async = true;
-        pbjsEl.src = "prebid.js"; // REPLACE WITH LOCATION OF prebid
-        var pbjsTargetEl = document.getElementsByTagName("head")[0];
-        pbjsTargetEl.insertBefore(pbjsEl, pbjsTargetEl.firstChild);
-    })();
-</script>
+    </script>
 <script>
-    googletag.cmd.push(function() {
-        googletag.defineSlot('/18286141601/PC_728_90', [728, 90], 'div-gpt-ad-PC_728_90').addService(googletag.pubads());
-        googletag.defineSlot('/18286141601/PC_ATF_300_250', [300, 250], 'div-gpt-ad-PC_ATF_300_250').addService(googletag.pubads());
-        googletag.defineSlot('/18286141601/PC_ATF_300_250_2', [300, 250], 'div-gpt-ad-PC_ATF_300_250_2').addService(googletag.pubads());
-        googletag.defineSlot('/18286141601/PC_BTF_300_250', [300, 250], 'div-gpt-ad-PC_BTF_300_250').addService(googletag.pubads());
-        googletag.defineSlot('/18286141601/PC_BTF_300_250_2', [300, 250], 'div-gpt-ad-PC_BTF_300_250_2').addService(googletag.pubads());
-        googletag.defineSlot('/18286141601/PC_ATF_300_600', [[300, 600],[300, 250]], 'div-gpt-ad-PC_ATF_300_600').addService(googletag.pubads());
-    });
-</script>
+        googletag.cmd.push(function() {
+            googletag.defineSlot('/18286141601/PC_728_90', [728, 90], 'div-gpt-ad-PC_728_90').addService(googletag.pubads());
+            googletag.defineSlot('/18286141601/PC_ATF_300_250', [300, 250], 'div-gpt-ad-PC_ATF_300_250').addService(googletag.pubads());
+            googletag.defineSlot('/18286141601/PC_ATF_300_250_2', [300, 250], 'div-gpt-ad-PC_ATF_300_250_2').addService(googletag.pubads());
+            googletag.defineSlot('/18286141601/PC_BTF_300_250', [300, 250], 'div-gpt-ad-PC_BTF_300_250').addService(googletag.pubads());
+            googletag.defineSlot('/18286141601/PC_BTF_300_250_2', [300, 250], 'div-gpt-ad-PC_BTF_300_250_2').addService(googletag.pubads());
+            googletag.defineSlot('/18286141601/PC_ATF_300_600', [[300, 600],[300, 250]], 'div-gpt-ad-PC_ATF_300_600').addService(googletag.pubads());
+        });
+    </script>
 <script>
-    adUnits.push({
-        code: "div-gpt-ad-PC_728_90",
-        sizes: [
-            [728, 90]
-        ],
-        bids: [{    bidder: 'adequant',
-                    params: {
-                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
-                            publisher_id: 5004421
-                    }
-                }, {
-                    bidder: "brealtime",
-                    params: {
-                        placementId: "9350094"
-                    }
-            }, /* NO 728x90 for AOL {
-                    bidder: "aol",
-                    params: {
-                        placement: "",
-                        network: "10122.1",
-                        alias: ""
-                    }
-            } */, {
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "728x90",
-                        cp: "558412",
-                        ct: "506509"
-                    }
-                }, {
-                    bidder: "sekindo",
-                    params: {
-                        placementId: "9901805"
-                    }
-                },{
-                    bidder: 'springserve',
-                    params: { impId: '7449-272-1593' }
-                },{
-                    bidder:"sonobi",
-                    params:{
-                        dom_id:"div-gpt-ad-PC_728_90",
-                        ad_unit:"/18286141601/PC_728_90"
-                    }
-                }]
-    });
-    adUnits.push({
-        code: "div-gpt-ad-PC_ATF_300_250",
-        sizes: [
-            [300, 250]
-        ],
-        bids: [{    bidder: 'adequant',
-                    params: {
-                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
-                            publisher_id: 5004421
-                    }
-                }, {
-                    bidder: "brealtime",
-                    params: {
-                        placementId: "9350108"
-                    }
-            }, {
-                    bidder: "aol",
-                    params: {
-                        placement: "4266204",
-                        network: "10122.1",
-                        alias: "4266204"
-                    }
-            }, {
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "300x250",
-                        cp: "558412",
-                        ct: "506508"
-                    }
-                }, {
-                    bidder: "sekindo",
-                    params: {
-                        placementId: "9901796"
-                    }
-                },{
-                    bidder: 'springserve',
-                    params: { impId: '7449-272-1594' }
-                },{
-                    bidder:"sonobi",
-                    params:{
-                        dom_id:"div-gpt-ad-PC_ATF_300_250",
-                        ad_unit:"/18286141601/PC_ATF_300_250"
-                    }
-                }]
-    });
-    adUnits.push({
-        code: "div-gpt-ad-PC_ATF_300_250_2",
-        sizes: [
-            [300, 250]
-        ],
-        bids: [{    bidder: 'adequant',
-                    params: {
-                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
-                            publisher_id: 5004421
-                    }
-                }, {
-                    bidder: "brealtime",
-                    params: {
-                        placementId: "9350109"
-                    }
-            }, {
-                    bidder: "aol",
-                    params: {
-                        placement: "4266205",
-                        network: "10122.1",
-                        alias: "4266205"
-                    }
-            }, {
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "300x250",
-                        cp: "558412",
-                        ct: "506510"
-                    }
-                }, {
-                    bidder: "sekindo",
-                    params: {
-                        placementId: "9901797"
-                    }
-                },{
-                    bidder: 'springserve',
-                    params: { impId: '7449-272-1595' }
-                },{
-                    bidder:"sonobi",
-                    params:{
-                        dom_id:"div-gpt-ad-PC_ATF_300_250_2",
-                        ad_unit:"/18286141601/PC_ATF_300_250_2"
-                    }
-                }]
-    });
-    adUnits.push({
-        code: "div-gpt-ad-PC_BTF_300_250",
-        sizes: [
-            [300, 250]
-        ],
-        bids: [{    bidder: 'adequant',
-                    params: {
-                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
-                            publisher_id: 5004421
-                    }
-                }, {
-                    bidder: "brealtime",
-                    params: {
-                        placementId: "9350110"
-                    }
-            }, {
-                    bidder: "aol",
-                    params: {
-                        placement: "4266202",
-                        network: "10122.1",
-                        alias: "4266202"
-                    }
-            }, {
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "300x250",
-                        cp: "558412",
-                        ct: "506511"
-                    }
-                }, {
-                    bidder: "sekindo",
-                    params: {
-                        placementId: "9901798"
-                    }
-                },{
-                    bidder: 'springserve',
-                    params: { impId: '7449-272-1596' }
-                },{
-                    bidder:"sonobi",
-                    params:{
-                        dom_id:"div-gpt-ad-PC_BTF_300_250",
-                        ad_unit:"/18286141601/PC_BTF_300_250"
-                    }
-                }]
-    });
-    adUnits.push({
-        code: "div-gpt-ad-PC_BTF_300_250_2",
-        sizes: [
-            [300, 250]
-        ],
-        bids: [{    bidder: 'adequant',
-                    params: {
-                            // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
-                            publisher_id: 5004421
-                    }
-                }, {
-                    bidder: "brealtime",
-                    params: {
-                        placementId: "9350110" // Duplicate of PC_BTF_300_250
-                    }
-            }, {
-                    bidder: "aol",
-                    params: {
-                        placement: "4266203",
-                        network: "10122.1",
-                        alias: "4266203"
-                    }
-            }, {
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "300x250",
-                        cp: "558412",
-                        ct: "506512"
-                    }
-                }, {
-                    bidder: "sekindo",
-                    params: {
-                        placementId: "9901803"
-                    }
-                },{
-                    bidder: 'springserve',
-                    params: { impId: '7449-272-1597' }
-                },{
-                    bidder:"sonobi",
-                    params:{
-                        dom_id:"div-gpt-ad-PC_BTF_300_250_2",
-                        ad_unit:"/18286141601/PC_BTF_300_250_2"
-                    }
-                }]
-    });
-    adUnits.push({
-        code: "div-gpt-ad-PC_ATF_300_600",
-        sizes: [
-            [300, 600], [300, 250]
-        ],
-        bids: [/*{    bidder: 'adequant',
-                    params: {
-                            publisher_id: 
-                    }
-                },*/ {
-                    bidder: "brealtime",
-                    params: {
-                        placementId: "9915859"
-                    }
+        adUnits.push({
+            code: "div-gpt-ad-PC_ATF_300_600",
+            sizes: [
+                [300, 600], [300, 250]
+            ],
+            bids: [/*{    bidder: 'adequant',
+             params: {
+             publisher_id:
+             }
+             },
+              */{
+             bidder: "brealtime",
+             params: {
+                 placementId: "10955622"
+                }
+             }, /*{
+             bidder: "aol",
+             params: {
+             placement: "",
+             network: "10122.1",
+             alias: ""
+             }
+             }, */ {
+                bidder: "pulsepoint",
+                params: {
+                    cf: "300x600",
+                    cp: "558412",
+                    ct: "526374"
+                }
+            },{
+                bidder: "pulsepoint",
+                params: {
+                    cf: "300x250",
+                    cp: "558412",
+                    ct: "526372"
+                }
             },/* {
-                    bidder: "aol",
-                    params: {
-                        placement: "",
-                        network: "10122.1",
-                        alias: ""
-                    }
-            }, */ {
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "300x600",
-                        cp: "558412",
-                        ct: "526374"
-                    }
-                },{
-                    bidder: "pulsepoint",
-                    params: {
-                        cf: "300x250",
-                        cp: "558412",
-                        ct: "526372"
-                    }
-                },/* {
-                    bidder: "sekindo",
-                    params: {
-                        placementId: ""
-                    }
-                },*/{
-                    bidder: 'springserve',
-                    params: { impId: '7449-272-2302' }
-                },{
-                    bidder:"sonobi",
-                    params:{
-                        dom_id:"div-gpt-ad-PC_ATF_300_600",
-                        ad_unit:"/18286141601/PC_ATF_300_600"
-                    }
-                }]
-    });    
-</script>
+             bidder: "sekindo",
+             params: {
+             placementId: ""
+             }
+             },*/{
+                bidder: 'springserve',
+                params: { impId: '7449-272-2302' }
+            },{
+                bidder:"sonobi",
+                params:{
+                    dom_id:"div-gpt-ad-PC_ATF_300_600",
+                    ad_unit:"/18286141601/PC_ATF_300_600"
+                }
+            }]
+        });
+        adUnits.push({
+            code: "div-gpt-ad-PC_728_90",
+            sizes: [
+                [728, 90]
+            ],
+            bids: [
+//                {    bidder: 'adequant',
+//                params: {
+//                    // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+//                    publisher_id: 5004421
+//                }
+//            },
+                {
+                bidder: "brealtime",
+                params: {
+                    placementId: "10955717"
+                }
+            },{
+                bidder: "pulsepoint",
+                params: {
+                    cf: "728x90",
+                    cp: "558412",
+                    ct: "506509"
+                }
+            },{
+                bidder: 'springserve',
+                params: { impId: '7449-272-1593' }
+            },
+//                {
+//                bidder: "sekindo",
+//                params: {
+//                    placementId: "9901805"
+//                }
+//            },
+                {
+                bidder:"sonobi",
+                params:{
+                    dom_id:"div-gpt-ad-PC_728_90",
+                        ad_unit:"/18286141601/PC_728_90"
+                }
+            }
+                /* NO 728x90 for AOL , {
+                 bidder: "aol",
+                 params: {
+                 placement: "",
+                 network: "10122.1",
+                 alias: ""
+                 }
+                 } */]
+        });
+        adUnits.push({
+            code: "div-gpt-ad-PC_ATF_300_250",
+            sizes: [
+                [300, 250]
+            ],
+            bids: [
+//                {    bidder: 'adequant',
+//                params: {
+//                    // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+//                    publisher_id: 5004421
+//                }
+//            },
+                {
+                bidder: "brealtime",
+                params: {
+                    placementId: "10955827"
+                }
+            },{
+                bidder: "aol",
+                params: {
+                    placement: "4266204",
+                    network: "10122.1",
+                    alias: "4266204"
+                }
+            },{
+                bidder: "pulsepoint",
+                params: {
+                    cf: "300x250",
+                    cp: "558412",
+                    ct: "506508"
+                }
+            },{
+                bidder: 'springserve',
+                params: { impId: '7449-272-1594' }
+            },{
+                bidder: "sekindo",
+                params: {
+                    placementId: "9901796"
+                }
+            },{
+                bidder:"sonobi",
+                params:{
+                    dom_id:"div-gpt-ad-PC_ATF_300_250",
+                    ad_unit:"/18286141601/PC_ATF_300_250"
+                }
+            }]
+        });
+
+        adUnits.push({
+            code: "div-gpt-ad-PC_BTF_300_250",
+            sizes: [
+                [300, 250]
+            ],
+            bids: [
+//                {    bidder: 'adequant',
+//                params: {
+//                    // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+//                    publisher_id: 5004421
+//                }
+//            },
+                {
+                bidder: "brealtime",
+                params: {
+                    placementId: "10955922"
+                }
+            },{
+                bidder: "aol",
+                params: {
+                    placement: "4266202",
+                    network: "10122.1",
+                    alias: "4266202"
+                }
+            },{
+                bidder: "pulsepoint",
+                params: {
+                    cf: "300x250",
+                    cp: "558412",
+                    ct: "506511"
+                }
+            },{
+                bidder: 'springserve',
+                params: { impId: '7449-272-1596' }
+            },{
+                bidder: "sekindo",
+                params: {
+                    placementId: "9901798"
+                }
+            },{
+                bidder:"sonobi",
+                params:{
+                    dom_id:"div-gpt-ad-PC_BTF_300_250",
+                    ad_unit:"/18286141601/PC_BTF_300_250"
+                }
+            }]
+        });
+        adUnits.push({
+            code: "div-gpt-ad-PC_BTF_300_250_2",
+            sizes: [
+                [300, 250]
+            ],
+            bids: [
+//                {    bidder: 'adequant',
+//                params: {
+//                    // bidfloor: 0,  // Optional parameter: bid floor price in $ CPM. Default value is 0
+//                    publisher_id: 5004421
+//                }
+//            },
+                {
+                bidder: "brealtime",
+                params: {
+                    placementId: "10955922" // Duplicate of PC_BTF_300_250
+                }
+            },{
+                bidder: "aol",
+                params: {
+                    placement: "4266203",
+                    network: "10122.1",
+                    alias: "4266203"
+                }
+            },{
+                bidder: "pulsepoint",
+                params: {
+                    cf: "300x250",
+                    cp: "558412",
+                    ct: "506512"
+                }
+            },{
+                bidder: 'springserve',
+                params: { impId: '7449-272-1597' }
+            },{
+                bidder: "sekindo",
+                params: {
+                    placementId: "9901803"
+                }
+            },{
+                bidder:"sonobi",
+                params:{
+                    dom_id:"div-gpt-ad-PC_BTF_300_250_2",
+                    ad_unit:"/18286141601/PC_BTF_300_250_2"
+                }
+            }]
+        });
+    </script>
 <script>
-    pbjs.que.push(function() {
+        pbjs.que.push(function() {
 
-        pbjs.addAdUnits(adUnits);
+            pbjs.addAdUnits(adUnits);
 
-       // Prebid Settings
-        pbjs.bidderSettings = {
-            standard: {
-                adserverTargeting: [{
-                    key: "hb_bidder",
-                    val: function(bidResponse) {
-                        return bidResponse.bidderCode;
-                    }
-                }, {
-                    key: "hb_adid",
-                    val: function(bidResponse) {
-                        return bidResponse.adId;
-                    }
-                }, {
-                    key: "hb_pb",
-                    val: function(bidResponse) {
-                        var cpm = bidResponse.cpm;
+            // Prebid Settings
+            pbjs.bidderSettings = {
+                standard: {
+                    adserverTargeting: [{
+                        key: "hb_bidder",
+                        val: function(bidResponse) {
+                            return bidResponse.bidderCode;
+                        }
+                    }, {
+                        key: "hb_adid",
+                        val: function(bidResponse) {
+                            return bidResponse.adId;
+                        }
+                    }, {
+                        key: "hb_pb",
+                        val: function(bidResponse) {
+                            var cpm = bidResponse.cpm;
                             if (cpm < 0.05) {
                                 return '0.01';
                             } else if (cpm < 1) {
@@ -367,44 +337,45 @@ var OX_dfp_ads = [
                             } else {
                                 return '20.00';
                             }
+                        }
+                    }]
+                },
+                brealtime: {
+                    bidCpmAdjustment: function(bidCpm) {
+                        return bidCpm * .85;
                     }
-                }]
-            },
-            brealtime: {
-                bidCpmAdjustment: function(bidCpm) {
-                    return bidCpm * .80;
-                }
-            },
-            aol: {
-                bidCpmAdjustment: function(bidCpm) {
-                    return bidCpm * .80;
-                }
-            },
-            sekindo: {
-                bidCpmAdjustment: function(bidCpm) {
-                    return bidCpm * .80;
-                }
-            }
-        };
-        pbjs.requestBids({
-            bidsBackHandler: function(bidResponses) {
-                initAdserver();
-            },
-            timeout: PREBID_TIMEOUT
-        })
-    });
-</script>
-<script type='text/javascript'>
-    googletag.cmd.push(function() {
+                },
+                aol: {
+                    bidCpmAdjustment: function(bidCpm) {
+                        return bidCpm * .80;
+                    }
+                },
+                 sekindo: {
+                     bidCpmAdjustment: function (bidCpm) {
+                         return bidCpm * .75;
+                     }
+                 }
 
-        pbjs.que.push(function() {
-            pbjs.setTargetingForGPTAsync();
+            };
+            pbjs.requestBids({
+                bidsBackHandler: function(bidResponses) {
+                    initAdserver();
+                },
+                timeout: PREBID_TIMEOUT
+            })
         });
+    </script>
+<script type='text/javascript'>
+        googletag.cmd.push(function() {
 
-        googletag.pubads().enableSingleRequest();
-        googletag.enableServices();
-    });
-</script>
+            pbjs.que.push(function() {
+                pbjs.setTargetingForGPTAsync();
+            });
+
+            googletag.pubads().enableSingleRequest();
+            googletag.enableServices();
+        });
+    </script>
 
 
 
