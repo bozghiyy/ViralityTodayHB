@@ -40,7 +40,7 @@
             var pbjsEl = document.createElement("script");
             pbjsEl.type = "text/javascript";
             pbjsEl.async = true;
-            pbjsEl.src = "http://www.viralitytoday.com/prebid.min.js"; // REPLACE WITH LOCATION OF prebid
+            pbjsEl.src = "prebid.min.js"; // REPLACE WITH LOCATION OF prebid
             var pbjsTargetEl = document.getElementsByTagName("head")[0];
             pbjsTargetEl.insertBefore(pbjsEl, pbjsTargetEl.firstChild);
         })();
@@ -94,7 +94,12 @@
                     dom_id:"div-gpt-ad-MOB_320_50",
                     ad_unit:"/18286141601/MOB_320_50"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077671"
+                    }
+                }]
         });
         adUnits.push({
             code: "div-gpt-ad-MOB_ATF_300_250",
@@ -141,7 +146,12 @@
                     dom_id:"div-gpt-ad-MOB_ATF_300_250",
                     ad_unit:"/18286141601/MOB_ATF_300_250"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077672"
+                    }
+                }]
         });
         adUnits.push({
             code: "div-gpt-ad-MOB_BTF_300_250",
@@ -188,7 +198,12 @@
                     dom_id:"div-gpt-ad-MOB_BTF_300_250",
                     ad_unit:"/18286141601/MOB_BTF_300_250"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077674"
+                    }
+                }]
         });
         adUnits.push({
             code: "div-gpt-ad-MOB_BTF_300_250_2",
@@ -235,7 +250,12 @@
                     dom_id:"div-gpt-ad-MOB_BTF_300_250_2",
                     ad_unit:"/18286141601/MOB_BTF_300_250_2"
                 }
-        }]
+        },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077675"
+                    }
+                }]
         });
     </script>
 <script>
@@ -287,6 +307,11 @@
                 sekindo: {
                     bidCpmAdjustment: function(bidCpm) {
                         return bidCpm * .75;
+                    }
+                },
+                defymedia: {
+                    bidCpmAdjustment: function(bidCpm) {
+                        return bidCpm * .80;
                     }
                 }
             };

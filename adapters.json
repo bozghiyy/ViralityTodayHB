@@ -12,6 +12,11 @@
     },
     {
       "appnexus": {
+        "alias": "defymedia"
+      }
+    },
+    {
+      "appnexus": {
         "alias": "sekindo"
       }
     }

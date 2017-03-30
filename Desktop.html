@@ -43,7 +43,7 @@
             var pbjsEl = document.createElement("script");
             pbjsEl.type = "text/javascript";
             pbjsEl.async = true;
-            pbjsEl.src = "http://www.viralitytoday.com/prebid.min.js"; // REPLACE WITH LOCATION OF prebid
+            pbjsEl.src = "prebid.min.js"; // REPLACE WITH LOCATION OF prebid
             var pbjsTargetEl = document.getElementsByTagName("head")[0];
             pbjsTargetEl.insertBefore(pbjsEl, pbjsTargetEl.firstChild);
         })();
@@ -109,7 +109,12 @@
                     dom_id:"div-gpt-ad-PC_ATF_300_600",
                     ad_unit:"/18286141601/PC_ATF_300_600"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077664"
+                    }
+                }]
         });
         adUnits.push({
             code: "div-gpt-ad-PC_728_90",
@@ -151,7 +156,12 @@
                     dom_id:"div-gpt-ad-PC_728_90",
                         ad_unit:"/18286141601/PC_728_90"
                 }
-            }
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077665"
+                    }
+                }
                 /* NO 728x90 for AOL , {
                  bidder: "aol",
                  params: {
@@ -206,7 +216,12 @@
                     dom_id:"div-gpt-ad-PC_ATF_300_250",
                     ad_unit:"/18286141601/PC_ATF_300_250"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077666"
+                    }
+                }]
         });
 
         adUnits.push({
@@ -254,7 +269,12 @@
                     dom_id:"div-gpt-ad-PC_BTF_300_250",
                     ad_unit:"/18286141601/PC_BTF_300_250"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077667"
+                    }
+                }]
         });
         adUnits.push({
             code: "div-gpt-ad-PC_BTF_300_250_2",
@@ -301,7 +321,12 @@
                     dom_id:"div-gpt-ad-PC_BTF_300_250_2",
                     ad_unit:"/18286141601/PC_BTF_300_250_2"
                 }
-            }]
+            },{
+                    bidder: "defymedia",
+                    params: {
+                        placementId: "11077668"
+                    }
+                }]
         });
     </script>
 <script>
@@ -354,7 +379,12 @@
                      bidCpmAdjustment: function (bidCpm) {
                          return bidCpm * .75;
                      }
-                 }
+                 },
+                defymedia: {
+                    bidCpmAdjustment: function(bidCpm) {
+                        return bidCpm * .80;
+                    }
+                }
 
             };
             pbjs.requestBids({
